@@ -1,0 +1,205 @@
+# Codemagic for the React Native bridge over the published Amwal ECR providers.
+#
+# `react-native-verify` runs on every push and pull request: TypeScript, lint,
+# tests/coverage, codegen, package build/archive, and the Android example.
+# `react-native-ios` resolves CocoaPods and builds the iOS example without signing.
+# `npm-release` runs only for vX.Y.Z tags, verifies version/provider availability,
+# publishes idempotently, and reads the exact package back from npm.
+
+definitions:
+  env: &env
+    node: 22.15.0
+    java: 17
+    xcode: latest
+    cocoapods: default
+  install: &install
+    name: Install dependencies
+    script: |
+      set -euo pipefail
+      corepack enable
+      yarn install --immutable
+  js_checks: &js_checks
+    name: TypeScript, lint, tests, package and codegen
+    script: |
+      set -euo pipefail
+      yarn lint
+      yarn typecheck
+      yarn test:ci --no-watchman
+      yarn prepare
+      npm pack --dry-run
+      codegen_out="$(mktemp -d /tmp/amwal-ecr-codegen.XXXXXX)"
+      node node_modules/react-native/scripts/generate-codegen-artifacts.js \
+        -p . -t all -o "$codegen_out" -s library
+  email: &email
+    email:
+      recipients:
+        - amr.elskaan@amwal-pay.com
+      notify:
+        success: true
+        failure: true
+
+workflows:
+  react-native-verify:
+    name: react-native-amwal-ecr — verify and Android example
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment: *env
+    triggering:
+      events:
+        - push
+        - pull_request
+      branch_patterns:
+        - pattern: '*'
+          include: true
+          source: true
+      cancel_previous_builds: true
+    scripts:
+      - *install
+      - *js_checks
+      - name: Android example (native provider + TurboModule)
+        script: |
+          set -euo pipefail
+          cd example/android
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug \
+            --no-daemon --console=plain \
+            -PreactNativeArchitectures=arm64-v8a
+    artifacts:
+      - coverage/**
+      - example/android/app/build/outputs/**/*.apk
+    publishing: *email
+
+  react-native-ios:
+    name: react-native-amwal-ecr — iOS example
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment: *env
+    triggering:
+      events:
+        - push
+        - pull_request
+      branch_patterns:
+        - pattern: '*'
+          include: true
+          source: true
+      cancel_previous_builds: true
+    scripts:
+      - *install
+      - name: Resolve pods
+        script: |
+          set -euo pipefail
+          cd example/ios
+          pod install
+          grep -A2 'AmwalECR' Podfile.lock | head -5
+      - name: Build iOS example without signing
+        script: |
+          set -euo pipefail
+          cd example/ios
+          xcodebuild \
+            -workspace AmwalEcrExample.xcworkspace \
+            -scheme AmwalEcrExample \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+    artifacts:
+      - example/ios/Podfile.lock
+      - /tmp/xcodebuild_logs/*.log
+    publishing: *email
+
+  npm-release:
+    name: react-native-amwal-ecr — publish to npm (vX.Y.Z tag)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      <<: *env
+      groups:
+        - npm_credentials
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: 'v*'
+          include: true
+    scripts:
+      - *install
+      - name: Tag, package and changelog agree
+        script: |
+          set -euo pipefail
+          tag="${CM_TAG:-}"
+          version="$(node -p "require('./package.json').version")"
+          changelog_version="$(grep -m1 -E '^## [0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md | sed -E 's/^## ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+          echo "tag=$tag package=$version changelog=$changelog_version"
+          if [[ -z "$tag" || "${tag#v}" != "$version" || "$version" != "$changelog_version" ]]; then
+            echo "Tag, package.json and the top CHANGELOG entry must name the same version." >&2
+            exit 1
+          fi
+          echo "$version" > "$CM_BUILD_DIR/.release-version"
+      - name: Native providers are live
+        script: |
+          set -euo pipefail
+          curl -fsSI \
+            https://repo1.maven.org/maven2/com/amwal-pay/ecr-sdk/1.0.4/ecr-sdk-1.0.4.pom \
+            >/dev/null
+          curl -fsS https://trunk.cocoapods.org/api/v1/pods/AmwalECR \
+            | python3 -c '
+          import json, sys
+          versions = {entry["name"] for entry in json.load(sys.stdin).get("versions", [])}
+          print("AmwalECR versions on trunk:", sorted(versions))
+          sys.exit(0 if "0.2.0" in versions else 1)
+          '
+      - *js_checks
+      - name: Android release compile
+        script: |
+          set -euo pipefail
+          cd example/android
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease \
+            --no-daemon --console=plain \
+            -PreactNativeArchitectures=arm64-v8a
+      - name: Skip an already published immutable version
+        script: |
+          set -euo pipefail
+          name="$(node -p "require('./package.json').name")"
+          version="$(cat "$CM_BUILD_DIR/.release-version")"
+          if npm view "$name@$version" version 2>/dev/null | grep -qx "$version"; then
+            echo "$name@$version is already on npm — nothing to publish."
+            touch "$CM_BUILD_DIR/.already-published"
+          else
+            echo "$name@$version is not on npm yet — will publish."
+          fi
+      - name: npm credentials
+        script: |
+          set -euo pipefail
+          [[ -f "$CM_BUILD_DIR/.already-published" ]] && { echo "skipped"; exit 0; }
+          [[ -n "${NPM_TOKEN:-}" ]] || {
+            echo "NPM_TOKEN is missing from the npm_credentials environment group." >&2
+            exit 1
+          }
+          printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > "$HOME/.npmrc"
+          chmod 0600 "$HOME/.npmrc"
+      - name: Publish to npm
+        script: |
+          set -euo pipefail
+          [[ -f "$CM_BUILD_DIR/.already-published" ]] && { echo "skipped"; exit 0; }
+          npm publish --access public
+      - name: Read the release back from npm
+        script: |
+          set -euo pipefail
+          name="$(node -p "require('./package.json').name")"
+          version="$(cat "$CM_BUILD_DIR/.release-version")"
+          for attempt in $(seq 1 30); do
+            if npm view "$name@$version" version 2>/dev/null | grep -qx "$version"; then
+              echo "$name@$version is resolvable from npm."
+              exit 0
+            fi
+            echo "Not visible yet ($attempt/30), waiting…"
+            sleep 10
+          done
+          echo "$name@$version did not appear on npm within five minutes." >&2
+          exit 1
+    artifacts:
+      - coverage/**
+      - example/android/app/build/outputs/**/*.apk
+    publishing: *email

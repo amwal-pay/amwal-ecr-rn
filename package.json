@@ -18,6 +18,9 @@
     "android",
     "ios",
     "cpp",
+    "docs",
+    "CHANGELOG.md",
+    "LICENSE",
     "*.podspec",
     "react-native.config.js",
     "!ios/build",
@@ -35,24 +38,31 @@
     "example": "yarn workspace react-native-amwal-ecr-example",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
     "prepare": "bob build",
+    "test": "jest",
+    "test:ci": "jest --ci --runInBand --coverage",
     "typecheck": "tsc",
-    "lint": "eslint \"**/*.{js,ts,tsx}\""
+    "lint": "eslint \"**/*.{js,ts,tsx}\"",
+    "verify": "yarn lint && yarn typecheck && yarn test:ci && yarn prepare && npm pack --dry-run"
   },
   "keywords": [
     "react-native",
     "ios",
-    "android"
+    "android",
+    "ecr",
+    "pos",
+    "payments",
+    "terminal"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/amwal-pay/amwal-ecr-react-native.git"
+    "url": "git+https://github.com/amwal-pay/amwal-ecr-rn.git"
   },
   "author": "Amwal Pay <support@amwal-pay.com> (https://amwal-pay.com)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/amwal-pay/amwal-ecr-react-native/issues"
+    "url": "https://github.com/amwal-pay/amwal-ecr-rn/issues"
   },
-  "homepage": "https://github.com/amwal-pay/amwal-ecr-react-native#readme",
+  "homepage": "https://github.com/amwal-pay/amwal-ecr-rn#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
@@ -62,12 +72,15 @@
     "@eslint/js": "^10.0.1",
     "@react-native/babel-preset": "0.87.1",
     "@react-native/eslint-config": "0.85.0",
+    "@react-native/jest-preset": "0.87.1",
+    "@types/jest": "^30.0.0",
     "@types/react": "^19.2.0",
     "del-cli": "^7.0.0",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-ft-flow": "^3.0.11",
     "eslint-plugin-prettier": "^5.5.6",
+    "jest": "^30.2.0",
     "prettier": "^3.8.3",
     "react": "19.2.3",
     "react-native": "0.87.1",
@@ -108,6 +121,19 @@
     "android": {
       "javaPackageName": "com.amwalecr"
     }
+  },
+  "jest": {
+    "preset": "@react-native/jest-preset",
+    "watchman": false,
+    "modulePathIgnorePatterns": [
+      "<rootDir>/example/node_modules",
+      "<rootDir>/lib/"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.{ts,tsx}",
+      "!src/NativeAmwalEcr.ts",
+      "!src/**/*.native.ts"
+    ]
   },
   "prettier": {
     "quoteProps": "consistent",
