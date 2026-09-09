@@ -15,7 +15,7 @@ internal object EcrMapping {
   fun result(result: EcrResult): WritableMap = when (result) {
     is EcrResult.Approved -> Arguments.createMap().apply {
       putString("outcome", "approved")
-      putString("merchantReferenceId", result.merchantReferenceId)
+      putString("merchantReferenceId", result.merchantReference)
       putString("amount", result.amount)
       putString("responseCode", result.responseCode)
       putString("rrn", result.rrn)
@@ -28,7 +28,7 @@ internal object EcrMapping {
 
     is EcrResult.Declined -> Arguments.createMap().apply {
       putString("outcome", "declined")
-      putString("merchantReferenceId", result.merchantReferenceId)
+      putString("merchantReferenceId", result.merchantReference)
       putString("responseCode", result.responseCode)
       putString("reason", result.reason)
       putString("nextStep", result.nextStep.name)
@@ -37,7 +37,7 @@ internal object EcrMapping {
 
     is EcrResult.Failed -> Arguments.createMap().apply {
       putString("outcome", "failed")
-      putString("merchantReferenceId", result.merchantReferenceId)
+      putString("merchantReferenceId", result.merchantReference)
       putMap("failure", failure(result.failure))
       result.recovered?.let { putMap("recovered", inquiry(it)) }
     }
@@ -46,21 +46,21 @@ internal object EcrMapping {
   fun inquiry(inquiry: EcrInquiry): WritableMap = when (inquiry) {
     is EcrInquiry.Found -> Arguments.createMap().apply {
       putString("outcome", "found")
-      putString("merchantReferenceId", inquiry.merchantReferenceId)
+      putString("merchantReferenceId", inquiry.merchantReference)
       putMap("transaction", transaction(inquiry.transaction))
       putString("raw", inquiry.raw)
     }
 
     is EcrInquiry.NotFound -> Arguments.createMap().apply {
       putString("outcome", "notFound")
-      putString("merchantReferenceId", inquiry.merchantReferenceId)
+      putString("merchantReferenceId", inquiry.merchantReference)
       putString("reason", inquiry.reason)
       putString("raw", inquiry.raw)
     }
 
     is EcrInquiry.Failed -> Arguments.createMap().apply {
       putString("outcome", "failed")
-      putString("merchantReferenceId", inquiry.merchantReferenceId)
+      putString("merchantReferenceId", inquiry.merchantReference)
       putMap("failure", failure(inquiry.failure))
     }
   }
@@ -68,21 +68,21 @@ internal object EcrMapping {
   fun receipt(receipt: EcrReceipt): WritableMap = when (receipt) {
     is EcrReceipt.Ready -> Arguments.createMap().apply {
       putString("outcome", "ready")
-      putString("merchantReferenceId", receipt.merchantReferenceId)
+      putString("merchantReferenceId", receipt.merchantReference)
       putString("url", receipt.url)
       putString("raw", receipt.raw)
     }
 
     is EcrReceipt.Unavailable -> Arguments.createMap().apply {
       putString("outcome", "unavailable")
-      putString("merchantReferenceId", receipt.merchantReferenceId)
+      putString("merchantReferenceId", receipt.merchantReference)
       putString("reason", receipt.reason)
       putString("raw", receipt.raw)
     }
 
     is EcrReceipt.Failed -> Arguments.createMap().apply {
       putString("outcome", "failed")
-      putString("merchantReferenceId", receipt.merchantReferenceId)
+      putString("merchantReferenceId", receipt.merchantReference)
       putMap("failure", failure(receipt.failure))
     }
   }
@@ -118,6 +118,8 @@ internal object EcrMapping {
     putBoolean("isRefunded", value.isRefunded)
     putBoolean("canVoid", value.canVoid)
     putBoolean("canRefund", value.canRefund)
+    putBoolean("partialApproval", value.partialApproval)
+    putString("authorizedAmount", value.authorizedAmount)
   }
 
   private fun failure(value: Failure): WritableMap = Arguments.createMap().apply {

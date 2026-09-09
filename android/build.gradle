@@ -48,6 +48,6 @@ android {
 
 dependencies {
   implementation "com.facebook.react:react-android"
-  implementation "com.amwal-pay:ecr-sdk:1.0.4"
+  implementation "com.amwal-pay:ecr-sdk:1.0.5"
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
 }
