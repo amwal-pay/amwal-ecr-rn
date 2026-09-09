@@ -31,7 +31,8 @@ final class AmwalEcrImpl: NSObject {
                 resolve(false)
                 return
             }
-            queue.async { resolve(call.terminal.isReachable()) }
+            let session = try call.makeSession()
+            queue.async { resolve(session.probeReachability()?.reachable ?? false) }
         } catch {
             rejectError(error, reject)
         }
@@ -42,11 +43,11 @@ final class AmwalEcrImpl: NSObject {
         resolver resolve: @escaping RCTPromiseResolveBlock,
         rejecter reject: @escaping RCTPromiseRejectBlock
     ) {
-        run(request, resolve, reject) { call in
+        run(request, resolve, reject) { call, session in
             ReactEcrMapping.result(
-                try call.terminal.sale(
+                try session.sale(
                     amount: try call.requiredAmount(),
-                    merchantReferenceId: call.merchantReferenceId
+                    merchantReference: call.merchantReferenceId
                 )
             )
         }
@@ -57,12 +58,12 @@ final class AmwalEcrImpl: NSObject {
         resolver resolve: @escaping RCTPromiseResolveBlock,
         rejecter reject: @escaping RCTPromiseRejectBlock
     ) {
-        run(request, resolve, reject) { call in
+        run(request, resolve, reject) { call, session in
             ReactEcrMapping.result(
-                try call.terminal.void(
+                try session.void(
                     receiptNumber: try call.requiredReceiptNumber("A void"),
                     originalTerminalId: call.originalTerminalId,
-                    merchantReferenceId: call.merchantReferenceId
+                    merchantReference: call.merchantReferenceId
                 )
             )
         }
@@ -73,14 +74,14 @@ final class AmwalEcrImpl: NSObject {
         resolver resolve: @escaping RCTPromiseResolveBlock,
         rejecter reject: @escaping RCTPromiseRejectBlock
     ) {
-        run(request, resolve, reject) { call in
+        run(request, resolve, reject) { call, session in
             ReactEcrMapping.result(
-                try call.terminal.refund(
+                try session.refund(
                     amount: try call.requiredAmount(),
                     receiptNumber: try call.requiredReceiptNumber("A refund"),
                     transactionDate: call.transactionDate,
                     originalTerminalId: call.originalTerminalId,
-                    merchantReferenceId: call.merchantReferenceId
+                    merchantReference: call.merchantReferenceId
                 )
             )
         }
@@ -91,13 +92,13 @@ final class AmwalEcrImpl: NSObject {
         resolver resolve: @escaping RCTPromiseResolveBlock,
         rejecter reject: @escaping RCTPromiseRejectBlock
     ) {
-        run(request, resolve, reject) { call in
+        run(request, resolve, reject) { call, session in
             ReactEcrMapping.inquiry(
-                try call.terminal.inquire(
+                try session.inquire(
                     receiptNumber: try call.requiredReceiptNumber("An inquiry"),
                     transactionDate: call.transactionDate,
                     originalTerminalId: call.originalTerminalId,
-                    merchantReferenceId: call.merchantReferenceId
+                    merchantReference: call.merchantReferenceId
                 )
             )
         }
@@ -108,13 +109,13 @@ final class AmwalEcrImpl: NSObject {
         resolver resolve: @escaping RCTPromiseResolveBlock,
         rejecter reject: @escaping RCTPromiseRejectBlock
     ) {
-        run(request, resolve, reject) { call in
+        run(request, resolve, reject) { call, session in
             ReactEcrMapping.inquiry(
-                try call.terminal.inquireByReference(
+                try session.inquireByReference(
                     try call.requiredOriginalReference(),
                     transactionDate: call.transactionDate,
                     originalTerminalId: call.originalTerminalId,
-                    merchantReferenceId: call.merchantReferenceId
+                    merchantReference: call.merchantReferenceId
                 )
             )
         }
@@ -125,13 +126,13 @@ final class AmwalEcrImpl: NSObject {
         resolver resolve: @escaping RCTPromiseResolveBlock,
         rejecter reject: @escaping RCTPromiseRejectBlock
     ) {
-        run(request, resolve, reject) { call in
+        run(request, resolve, reject) { call, session in
             ReactEcrMapping.receipt(
-                try call.terminal.receipt(
+                try session.receipt(
                     receiptNumber: try call.requiredReceiptNumber("A receipt"),
                     transactionDate: call.transactionDate,
                     originalTerminalId: call.originalTerminalId,
-                    merchantReferenceId: call.merchantReferenceId
+                    merchantReference: call.merchantReferenceId
                 )
             )
         }
@@ -151,7 +152,7 @@ final class AmwalEcrImpl: NSObject {
             return
         }
 
-        operation.terminal.cancel()
+        operation.session.cancel()
         operation.reply.resolve(
             ReactEcrMapping.failedResult(
                 merchantReferenceId: operation.merchantReferenceId,
@@ -169,7 +170,7 @@ final class AmwalEcrImpl: NSObject {
         lock.unlock()
 
         for operation in operations {
-            operation.terminal.cancel()
+            operation.session.cancel()
             operation.reply.resolve(
                 ReactEcrMapping.failedResult(
                     merchantReferenceId: operation.merchantReferenceId,
@@ -185,26 +186,27 @@ final class AmwalEcrImpl: NSObject {
         _ request: [String: Any],
         _ resolve: @escaping RCTPromiseResolveBlock,
         _ reject: @escaping RCTPromiseRejectBlock,
-        _ block: @escaping (Call) throws -> Any
+        _ block: @escaping (Call, EcrOpenedSession) throws -> Any
     ) {
         do {
             let call = try Call(request)
             let reply = OneShotReply(resolve: resolve, reject: reject)
 
-            guard call.isIpTransport else {
+            guard call.isSupportedTransport else {
                 reply.resolve(
                     ReactEcrMapping.failedResult(
                         merchantReferenceId: "",
                         kind: ReactEcrMapping.unsupported,
-                        message: "A terminal opens its ECR listener only for ethernet and wifi. "
-                            + "Transport '\(call.transport)' is not handled by this library, so nothing was sent."
+                        message: "This library drives a terminal over ethernet, wifi, or the Web Service "
+                            + "REST path. Transport '\(call.transport)' is not handled, so nothing was sent."
                     )
                 )
                 return
             }
 
+            let session = try call.makeSession()
             let operation = RunningOperation(
-                terminal: call.terminal,
+                session: session,
                 reply: reply,
                 merchantReferenceId: call.merchantReferenceId
             )
@@ -224,7 +226,7 @@ final class AmwalEcrImpl: NSObject {
             queue.async { [weak self] in
                 defer { self?.deregister(call.operationId, operation) }
                 do {
-                    reply.resolve(try block(call))
+                    reply.resolve(try block(call, session))
                 } catch {
                     self?.rejectError(error, reply)
                 }
@@ -268,12 +270,12 @@ final class AmwalEcrImpl: NSObject {
 }
 
 private final class RunningOperation {
-    let terminal: EcrTerminal
+    let session: EcrOpenedSession
     let reply: OneShotReply
     let merchantReferenceId: String
 
-    init(terminal: EcrTerminal, reply: OneShotReply, merchantReferenceId: String) {
-        self.terminal = terminal
+    init(session: EcrOpenedSession, reply: OneShotReply, merchantReferenceId: String) {
+        self.session = session
         self.reply = reply
         self.merchantReferenceId = merchantReferenceId
     }
@@ -316,26 +318,45 @@ private struct Call {
     let transactionDate: String
     let originalTerminalId: String
     let merchantReferenceId: String
-    let terminal: EcrTerminal
+    let host: String
+    let serialNumber: String
+    let config: EcrConfig
     private let raw: [String: Any]
 
     init(_ raw: [String: Any]) throws {
         self.raw = raw
         operationId = try Self.requiredString(raw, "operationId")
-        let host = try Self.requiredString(raw, "host")
-        let serialNumber = raw["serialNumber"] as? String ?? ""
         transport = raw["transport"] as? String ?? "wifi"
+        // The payment host addresses a Web Service terminal; only the IP
+        // transports dial an address of their own.
+        if transport == "ethernet" || transport == "wifi" {
+            host = try Self.requiredString(raw, "host")
+        } else {
+            host = (raw["host"] as? String)?.trimmed ?? ""
+        }
+        serialNumber = raw["serialNumber"] as? String ?? ""
         transactionDate = raw["transactionDate"] as? String ?? ""
         originalTerminalId = raw["originalTerminalId"] as? String ?? ""
         merchantReferenceId = raw["merchantReferenceId"] as? String ?? ""
-        terminal = EcrTerminal(
-            host: host,
-            serialNumber: serialNumber,
-            config: try Self.config(raw["config"] as? [String: Any])
-        )
+        config = try Self.config(raw["config"] as? [String: Any])
     }
 
     var isIpTransport: Bool { transport == "ethernet" || transport == "wifi" }
+    var isWebService: Bool { transport == "webService" || transport == "web_service" }
+    var isSupportedTransport: Bool { isIpTransport || isWebService }
+
+    /// The SDK session for this call's transport: TCP for ethernet/wifi, the
+    /// hosted REST path for webService.
+    func makeSession() throws -> EcrOpenedSession {
+        let link: EcrLink = isWebService
+            ? .webService(merchantId: config.merchantId, terminalId: config.terminalId)
+            : .lan(host: host, port: config.port)
+        let plan = EcrSessions.plan(link: link, config: config)
+        guard plan.isReady else {
+            throw EcrInvalidArgument(plan.issues.joined(separator: "; "))
+        }
+        return EcrSessions.open(terminalSerial: serialNumber, plan: plan)
+    }
 
     func requiredAmount() throws -> Decimal {
         let text = try Self.requiredString(raw, "amount")
@@ -381,6 +402,9 @@ private struct Call {
         if let field = raw["probeTimeoutMs"] as? NSNumber { value.probeTimeout = field.doubleValue / 1000 }
         if let field = raw["secureHashKey"] as? String { value.secureHashKey = field }
         if let field = raw["autoInquireOnFailure"] as? NSNumber { value.autoInquireOnFailure = field.boolValue }
+        if let field = raw["merchantId"] as? String { value.merchantId = field }
+        if let field = raw["terminalId"] as? String { value.terminalId = field }
+        if let field = raw["environment"] as? String { value.environment = EcrEnvironment.fromName(field) }
 
         guard (0 ... 4).contains(value.minorUnitDigits) else {
             throw EcrInvalidArgument("minorUnitDigits must be between 0 and 4")
