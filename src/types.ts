@@ -1,4 +1,21 @@
-export type EcrTransport = 'ethernet' | 'wifi' | 'bluetooth' | 'webService';
+/**
+ * How the till reaches the terminal.
+ *
+ * `wifi` and `ethernet` open a TCP socket to the terminal's local IP.
+ * `webService` drives the terminal through the Amwal payment host over REST —
+ * no local network involved; it needs `merchantId`, `terminalId` and
+ * `environment` in the config instead of a host. `usbCable` and `bluetooth`
+ * are not handled by this library and answer with a typed `unsupported`
+ * failure without sending anything.
+ */
+export type EcrTransport =
+  'ethernet' | 'wifi' | 'bluetooth' | 'usbCable' | 'webService';
+
+/**
+ * Hub deployment for Web Service ECR. URLs are resolved inside the native
+ * SDKs; integrators pass only this name.
+ */
+export type EcrEnvironment = 'SIT' | 'UAT' | 'PROD';
 
 export interface EcrConfig {
   ecrId?: string;
@@ -10,10 +27,20 @@ export interface EcrConfig {
   probeTimeoutMs?: number;
   secureHashKey?: string;
   autoInquireOnFailure?: boolean;
+  /** Backend merchant ID — required for the `webService` transport. */
+  merchantId?: string;
+  /** Backend terminal ID — required for the `webService` transport. */
+  terminalId?: string;
+  /** Hub deployment for the `webService` transport. Defaults to `'SIT'`. */
+  environment?: EcrEnvironment;
 }
 
 export interface EcrTerminalOptions {
-  host: string;
+  /**
+   * The terminal's IP address. Required for `wifi` and `ethernet`; ignored by
+   * `webService`, which addresses the terminal through the payment host.
+   */
+  host?: string;
   serialNumber?: string;
   transport?: EcrTransport;
   config?: EcrConfig;
@@ -91,6 +118,8 @@ export interface EcrTransaction {
   isRefunded: boolean;
   canVoid: boolean;
   canRefund: boolean;
+  partialApproval: boolean;
+  authorizedAmount: string;
 }
 
 export interface EcrInquiryFound {
