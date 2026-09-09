@@ -217,15 +217,61 @@ xcodebuild -workspace AmwalEcrExample.xcworkspace \
 
 The example intentionally does not persist terminal details or secrets.
 
-## Releases
+## Continuous integration
 
-Versions follow semantic versioning. A `vX.Y.Z` tag triggers Codemagic after the
-tag, `package.json`, and top `CHANGELOG.md` entry agree. CI verifies TypeScript,
-tests, the package archive, Android, and iOS, then publishes idempotently to npm
-and reads the exact version back from the registry.
+[`codemagic.yaml`](codemagic.yaml) runs on Codemagic. Every push and pull
+request runs `rn-verify`: TypeScript, lint, tests with coverage, the package
+build and archive, codegen, the Android example (which compiles the Kotlin
+bridge against `com.amwal-pay:ecr-sdk` from Maven Central) and the iOS example
+for the simulator (which compiles the Swift bridge against `AmwalECR` from
+CocoaPods trunk).
 
-Native providers must already be resolvable from Maven Central and CocoaPods
-trunk before a React Native release is allowed.
+### Releasing to npm
+
+Versions follow semantic versioning. A `vX.Y.Z` tag runs `npm-publish`, which
+refuses unless the tag, `package.json` and the top `CHANGELOG.md` entry agree
+and the exact native providers this bridge pins (`android/build.gradle` and
+`RNAmwalEcr.podspec`) are live on Maven Central and trunk. A version already on
+npm is skipped, never re-pushed, and the run ends by reading the version back
+from the registry.
+
+```bash
+git tag -a v0.1.1 -m "react-native-amwal-ecr 0.1.1" && git push origin v0.1.1
+```
+
+Codemagic needs an environment group `npm_credentials` holding `NPM_TOKEN`, an
+npm granular access token with publish rights on `react-native-amwal-ecr`. The
+token lives only there — never in this repository.
+
+### Distributing the example
+
+The example (`example/`, bundle `com.amwalpay.amwalEcrRnExample`, package
+`com.amwalpay.amwal_ecr_rn_example`, shown as "Amwal ECR RN Example") can be
+handed to testers without a workstation:
+
+| Tag | Workflow | Goes to |
+|---|---|---|
+| `example-ios-<n>` | `example-ios-testflight` | TestFlight, internal group `Testers` |
+| `example-android-<n>` | `example-android-firebase` | Firebase App Distribution, group `tester` |
+
+```bash
+git tag example-ios-1 && git push origin example-ios-1
+git tag example-android-1 && git push origin example-android-1
+```
+
+Both can also be started by hand from Codemagic. The build number is
+Codemagic's `PROJECT_BUILD_NUMBER`, so every build installs over the previous
+one. What has to exist first:
+
+- **iOS**: the App Store Connect integration named `Amwal CodeMagic`, and an app
+  record in App Store Connect for `com.amwalpay.amwalEcrRnExample`. Signing is
+  automatic — the integration's API key fetches or creates the App Store
+  provisioning profile; no profile or certificate is uploaded by hand.
+- **Android**: environment group `A` with `FIREBASE_SERVICE_ACCOUNT` (the
+  Firebase project's service-account JSON) and `FIREBASE_ANDROID_APP_ID` (the
+  Android app registered in Firebase for `com.amwalpay.amwal_ecr_rn_example`).
+  The release APK is signed with the template's debug keystore, which App
+  Distribution accepts; a store listing would need a real upload keystore.
 
 ## License
 

@@ -1,11 +1,38 @@
-# Codemagic for the React Native bridge over the published Amwal ECR providers.
+# Codemagic for react-native-amwal-ecr, the React Native bridge over the
+# published Amwal ECR providers (com.amwal-pay:ecr-sdk on Maven Central,
+# AmwalECR on CocoaPods trunk).
 #
-# `react-native-verify` runs on every push and pull request: TypeScript, lint,
-# tests/coverage, codegen, package build/archive, and the Android example.
-# `react-native-ios` resolves CocoaPods and builds the iOS example without signing.
-# `npm-release` runs only for vX.Y.Z tags, verifies version/provider availability,
-# publishes idempotently, and reads the exact package back from npm.
-
+# Four workflows:
+#
+#   rn-verify                 every push and pull request — TypeScript, lint,
+#                             tests with coverage, the package build and
+#                             archive, codegen, the Android example (which
+#                             compiles the Kotlin bridge against Maven Central)
+#                             and the iOS example for the simulator (which
+#                             compiles the Swift bridge against trunk).
+#
+#   npm-publish               a `vX.Y.Z` tag — refuses unless the tag,
+#                             package.json and the top CHANGELOG entry agree and
+#                             the exact native providers this bridge pins are
+#                             live on their registries; skips a version already
+#                             on npm; publishes; reads the version back.
+#
+#   example-ios-testflight    a `example-ios-*` tag or a manual start — builds
+#                             the example signed for the App Store and submits
+#                             it to TestFlight so the founder can install it.
+#
+#   example-android-firebase  a `example-android-*` tag or a manual start —
+#                             builds the example release APK and hands it to
+#                             Firebase App Distribution.
+#
+# Credentials, all Codemagic environment groups, never in the repository:
+#   npm_credentials  NPM_TOKEN — an npm granular access token with publish
+#                    rights on react-native-amwal-ecr.
+#   A                FIREBASE_SERVICE_ACCOUNT (the Firebase project's service
+#                    account JSON) and FIREBASE_ANDROID_APP_ID (the Android app
+#                    registered in Firebase for com.amwalpay.amwal_ecr_rn_example).
+# The App Store Connect integration named "Amwal CodeMagic" supplies the API
+# key for automatic signing and for TestFlight.
 definitions:
   env: &env
     node: 22.15.0
@@ -30,6 +57,37 @@ definitions:
       codegen_out="$(mktemp -d /tmp/amwal-ecr-codegen.XXXXXX)"
       node node_modules/react-native/scripts/generate-codegen-artifacts.js \
         -p . -t all -o "$codegen_out" -s library
+  android_example: &android_example
+    name: Android example (compiles the Kotlin bridge against Maven Central)
+    script: |
+      set -euo pipefail
+      cd example/android
+      chmod +x gradlew
+      # :app depends on :react-native-amwal-ecr, so this is the bridge's
+      # compile check against the pinned com.amwal-pay:ecr-sdk as well.
+      ./gradlew :app:assembleDebug \
+        --no-daemon --console=plain \
+        -PreactNativeArchitectures=arm64-v8a
+  ios_pods: &ios_pods
+    name: Resolve pods (AmwalECR from trunk)
+    script: |
+      set -euo pipefail
+      cd example/ios
+      pod install --repo-update
+      grep -A2 'AmwalECR' Podfile.lock | head -5
+  ios_simulator: &ios_simulator
+    name: iOS example for the simulator, without signing
+    script: |
+      set -euo pipefail
+      cd example/ios
+      xcodebuild \
+        -workspace AmwalEcrExample.xcworkspace \
+        -scheme AmwalEcrExample \
+        -configuration Debug \
+        -sdk iphonesimulator \
+        -destination 'generic/platform=iOS Simulator' \
+        CODE_SIGNING_ALLOWED=NO \
+        build
   email: &email
     email:
       recipients:
@@ -39,8 +97,8 @@ definitions:
         failure: true
 
 workflows:
-  react-native-verify:
-    name: react-native-amwal-ecr — verify and Android example
+  rn-verify:
+    name: react-native-amwal-ecr — verify (JS, Android, iOS)
     instance_type: mac_mini_m2
     max_build_duration: 60
     environment: *env
@@ -56,59 +114,17 @@ workflows:
     scripts:
       - *install
       - *js_checks
-      - name: Android example (native provider + TurboModule)
-        script: |
-          set -euo pipefail
-          cd example/android
-          chmod +x gradlew
-          ./gradlew :app:assembleDebug \
-            --no-daemon --console=plain \
-            -PreactNativeArchitectures=arm64-v8a
+      - *android_example
+      - *ios_pods
+      - *ios_simulator
     artifacts:
       - coverage/**
       - example/android/app/build/outputs/**/*.apk
-    publishing: *email
-
-  react-native-ios:
-    name: react-native-amwal-ecr — iOS example
-    instance_type: mac_mini_m2
-    max_build_duration: 60
-    environment: *env
-    triggering:
-      events:
-        - push
-        - pull_request
-      branch_patterns:
-        - pattern: '*'
-          include: true
-          source: true
-      cancel_previous_builds: true
-    scripts:
-      - *install
-      - name: Resolve pods
-        script: |
-          set -euo pipefail
-          cd example/ios
-          pod install
-          grep -A2 'AmwalECR' Podfile.lock | head -5
-      - name: Build iOS example without signing
-        script: |
-          set -euo pipefail
-          cd example/ios
-          xcodebuild \
-            -workspace AmwalEcrExample.xcworkspace \
-            -scheme AmwalEcrExample \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-    artifacts:
       - example/ios/Podfile.lock
       - /tmp/xcodebuild_logs/*.log
     publishing: *email
 
-  npm-release:
+  npm-publish:
     name: react-native-amwal-ecr — publish to npm (vX.Y.Z tag)
     instance_type: mac_mini_m2
     max_build_duration: 60
@@ -128,36 +144,41 @@ workflows:
         script: |
           set -euo pipefail
           tag="${CM_TAG:-}"
+          [[ -n "$tag" ]] || { echo "Not a tag build (CM_TAG is empty)"; exit 1; }
           version="$(node -p "require('./package.json').version")"
           changelog_version="$(grep -m1 -E '^## [0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md | sed -E 's/^## ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
           echo "tag=$tag package=$version changelog=$changelog_version"
-          if [[ -z "$tag" || "${tag#v}" != "$version" || "$version" != "$changelog_version" ]]; then
+          if [[ "${tag#v}" != "$version" || "$version" != "$changelog_version" ]]; then
             echo "Tag, package.json and the top CHANGELOG entry must name the same version." >&2
+            echo "Tags are never moved: fix the files and release the next version." >&2
             exit 1
           fi
           echo "$version" > "$CM_BUILD_DIR/.release-version"
-      - name: Native providers are live
+      - name: The native providers this bridge pins are live
         script: |
           set -euo pipefail
-          curl -fsSI \
-            https://repo1.maven.org/maven2/com/amwal-pay/ecr-sdk/1.0.4/ecr-sdk-1.0.4.pom \
-            >/dev/null
-          curl -fsS https://trunk.cocoapods.org/api/v1/pods/AmwalECR \
-            | python3 -c '
+          # android/build.gradle: implementation "com.amwal-pay:ecr-sdk:X.Y.Z"
+          sdk="$(sed -nE 's/.*"com\.amwal-pay:ecr-sdk:([0-9.]+)".*/\1/p' android/build.gradle | head -1)"
+          [[ -n "$sdk" ]] || { echo "Could not read the ecr-sdk version from android/build.gradle" >&2; exit 1; }
+          curl -fsSI "https://repo1.maven.org/maven2/com/amwal-pay/ecr-sdk/${sdk}/ecr-sdk-${sdk}.pom" >/dev/null \
+            && echo "com.amwal-pay:ecr-sdk:${sdk} is on Maven Central" \
+            || { echo "com.amwal-pay:ecr-sdk:${sdk} is not on Maven Central; release the Android provider first." >&2; exit 1; }
+          # RNAmwalEcr.podspec: s.dependency "AmwalECR", "~> X.Y.Z"
+          wanted="$(sed -nE 's/.*s\.dependency[[:space:]]+"AmwalECR",[[:space:]]*"~>[[:space:]]*([0-9.]+)".*/\1/p' RNAmwalEcr.podspec | head -1)"
+          [[ -n "$wanted" ]] || { echo "Could not read the AmwalECR range from RNAmwalEcr.podspec" >&2; exit 1; }
+          curl -fsS https://trunk.cocoapods.org/api/v1/pods/AmwalECR | python3 -c '
           import json, sys
-          versions = {entry["name"] for entry in json.load(sys.stdin).get("versions", [])}
-          print("AmwalECR versions on trunk:", sorted(versions))
-          sys.exit(0 if "0.2.0" in versions else 1)
-          '
+          wanted = tuple(int(p) for p in sys.argv[1].split("."))
+          have = [tuple(int(p) for p in v["name"].split(".")) for v in json.load(sys.stdin).get("versions", []) if v["name"].replace(".", "").isdigit()]
+          # ~> X.Y.Z : >= X.Y.Z and < X.(Y+1)
+          ok = [v for v in have if v >= wanted and v[:2] == wanted[:2]]
+          print("AmwalECR on trunk satisfying ~> %s: %s" % (sys.argv[1], [".".join(map(str, v)) for v in ok]))
+          sys.exit(0 if ok else 1)
+          ' "$wanted" || { echo "No AmwalECR version satisfying ~> $wanted is on CocoaPods trunk; release the iOS provider first." >&2; exit 1; }
       - *js_checks
-      - name: Android release compile
-        script: |
-          set -euo pipefail
-          cd example/android
-          chmod +x gradlew
-          ./gradlew :app:assembleRelease \
-            --no-daemon --console=plain \
-            -PreactNativeArchitectures=arm64-v8a
+      - *android_example
+      - *ios_pods
+      - *ios_simulator
       - name: Skip an already published immutable version
         script: |
           set -euo pipefail
@@ -179,6 +200,7 @@ workflows:
           }
           printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > "$HOME/.npmrc"
           chmod 0600 "$HOME/.npmrc"
+          npm whoami
       - name: Publish to npm
         script: |
           set -euo pipefail
@@ -203,3 +225,103 @@ workflows:
       - coverage/**
       - example/android/app/build/outputs/**/*.apk
     publishing: *email
+
+  example-ios-testflight:
+    name: Amwal ECR RN Example — TestFlight (example-ios-* tag or manual)
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    integrations:
+      app_store_connect: Amwal CodeMagic
+    environment:
+      <<: *env
+      # Automatic signing: the App Store Connect integration's API key fetches
+      # (or creates) the App Store provisioning profile for this bundle id, so
+      # no profile is uploaded by hand. The app record must exist in App Store
+      # Connect before the first submission.
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.amwalpay.amwalEcrRnExample
+      vars:
+        XCODE_WORKSPACE: AmwalEcrExample.xcworkspace
+        XCODE_SCHEME: AmwalEcrExample
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: 'example-ios-*'
+          include: true
+    scripts:
+      - *install
+      - *ios_pods
+      - name: Build number
+        script: |
+          set -euo pipefail
+          cd example/ios
+          # One monotonically increasing build number per Codemagic build, so
+          # TestFlight never rejects a duplicate.
+          agvtool new-version -all "$PROJECT_BUILD_NUMBER"
+      - name: Set up code signing settings on Xcode project
+        script: |
+          set -euo pipefail
+          cd example/ios
+          xcode-project use-profiles
+      - name: Build IPA for App Store distribution
+        script: |
+          set -euo pipefail
+          cd example/ios
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME" \
+            --archive-flags="-destination 'generic/platform=iOS'"
+    artifacts:
+      - example/ios/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+    publishing:
+      <<: *email
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - Testers
+        submit_to_app_store: false
+
+  example-android-firebase:
+    name: Amwal ECR RN Example — Firebase App Distribution (example-android-* tag or manual)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      <<: *env
+      groups:
+        - A
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: 'example-android-*'
+          include: true
+    scripts:
+      - *install
+      - name: Build the example release APK
+        script: |
+          set -euo pipefail
+          cd example/android
+          chmod +x gradlew
+          # The release build type is signed with the checked-in debug keystore
+          # (the React Native template default). App Distribution accepts that;
+          # a store listing would need a real upload keystore.
+          ./gradlew :app:assembleRelease \
+            --no-daemon --console=plain \
+            -PversionCode="$PROJECT_BUILD_NUMBER"
+          ls -la app/build/outputs/apk/release/
+    artifacts:
+      - example/android/app/build/outputs/**/*.apk
+    publishing:
+      <<: *email
+      firebase:
+        firebase_service_account: $FIREBASE_SERVICE_ACCOUNT
+        android:
+          app_id: $FIREBASE_ANDROID_APP_ID
+          artifact_type: 'apk'
+          groups:
+            - tester
