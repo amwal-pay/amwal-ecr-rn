@@ -234,14 +234,17 @@ workflows:
       app_store_connect: Amwal CodeMagic
     environment:
       <<: *env
-      # Automatic signing: the App Store Connect integration's API key fetches
-      # (or creates) the App Store provisioning profile for this bundle id, so
-      # no profile is uploaded by hand. The app record must exist in App Store
-      # Connect before the first submission.
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.amwalpay.amwalEcrRnExample
+      # Script signing, not the automatic `ios_signing:` form: that form only
+      # fetches profiles already uploaded to Codemagic, and there are none for
+      # this bundle. The `ios_signing` group holds CERTIFICATE_PRIVATE_KEY, the
+      # same key the Flutter example signs with; fetch-signing-files creates
+      # the profile through the App Store Connect integration on first use.
+      # The app record must exist in App Store Connect before the first
+      # submission.
+      groups:
+        - ios_signing
       vars:
+        BUNDLE_ID: com.amwalpay.amwalEcrRnExample
         XCODE_WORKSPACE: AmwalEcrExample.xcworkspace
         XCODE_SCHEME: AmwalEcrExample
     triggering:
@@ -260,6 +263,17 @@ workflows:
           # One monotonically increasing build number per Codemagic build, so
           # TestFlight never rejects a duplicate.
           agvtool new-version -all "$PROJECT_BUILD_NUMBER"
+      - name: Set up a keychain for signing
+        script: |
+          keychain initialize
+      - name: Fetch or create the App Store signing files
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+      - name: Add the certificate to the keychain
+        script: |
+          keychain add-certificates
       - name: Set up code signing settings on Xcode project
         script: |
           set -euo pipefail
