@@ -314,14 +314,34 @@ workflows:
             --no-daemon --console=plain \
             -PversionCode="$PROJECT_BUILD_NUMBER"
           ls -la app/build/outputs/apk/release/
+      - name: Upload to Firebase App Distribution
+        script: |
+          set -euo pipefail
+          # A script with the Firebase CLI, not a `publishing: firebase:`
+          # block: Codemagic validates the variables a publishing block names
+          # when it loads this file, and while FIREBASE_SERVICE_ACCOUNT is not
+          # yet defined that validation error rejects EVERY webhook-started
+          # build of EVERY workflow here. A script only needs them when it runs.
+          if [[ -z "${FIREBASE_SERVICE_ACCOUNT:-}" || -z "${FIREBASE_ANDROID_APP_ID:-}" ]]; then
+            echo "Set FIREBASE_SERVICE_ACCOUNT (secure: the service-account JSON, or its base64) and" >&2
+            echo "FIREBASE_ANDROID_APP_ID (the Firebase Android app id for com.amwalpay.amwal_ecr_rn_example) in group A." >&2
+            exit 1
+          fi
+          creds="$CM_BUILD_DIR/.firebase-sa.json"
+          if printf '%s' "$FIREBASE_SERVICE_ACCOUNT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
+            printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$creds"
+          else
+            printf '%s' "$FIREBASE_SERVICE_ACCOUNT" | base64 --decode > "$creds"
+          fi
+          chmod 600 "$creds"
+          export GOOGLE_APPLICATION_CREDENTIALS="$creds"
+          command -v firebase >/dev/null 2>&1 || npm install -g firebase-tools
+          apk="$(ls example/android/app/build/outputs/apk/release/*.apk | head -1)"
+          firebase appdistribution:distribute "$apk" \
+            --app "$FIREBASE_ANDROID_APP_ID" \
+            --groups tester \
+            --release-notes "Build $PROJECT_BUILD_NUMBER from ${CM_TAG:-${CM_BRANCH:-manual}} (${CM_COMMIT:0:8})"
+          rm -f "$creds"
     artifacts:
       - example/android/app/build/outputs/**/*.apk
-    publishing:
-      <<: *email
-      firebase:
-        firebase_service_account: $FIREBASE_SERVICE_ACCOUNT
-        android:
-          app_id: $FIREBASE_ANDROID_APP_ID
-          artifact_type: 'apk'
-          groups:
-            - tester
+    publishing: *email
