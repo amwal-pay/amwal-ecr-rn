@@ -72,6 +72,10 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+// CI passes -PversionCode=$PROJECT_BUILD_NUMBER so every distributed build is
+// installable over the previous one.
+def exampleVersionCode = (project.findProperty("versionCode") ?: "1").toString().toInteger()
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -79,10 +83,10 @@ android {
 
     namespace "amwalecr.example"
     defaultConfig {
-        applicationId "amwalecr.example"
+        applicationId "com.amwalpay.amwal_ecr_rn_example"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
+        versionCode exampleVersionCode
         versionName "1.0"
     }
     signingConfigs {

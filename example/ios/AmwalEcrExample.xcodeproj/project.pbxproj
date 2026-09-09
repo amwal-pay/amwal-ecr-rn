@@ -273,7 +273,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "amwalecr.example";
+				PRODUCT_BUNDLE_IDENTIFIER = com.amwalpay.amwalEcrRnExample;
 				PRODUCT_NAME = AmwalEcrExample;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -302,7 +302,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "amwalecr.example";
+				PRODUCT_BUNDLE_IDENTIFIER = com.amwalpay.amwalEcrRnExample;
 				PRODUCT_NAME = AmwalEcrExample;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;
