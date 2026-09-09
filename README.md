@@ -4,8 +4,8 @@ Drive an Amwal POS terminal from a React Native Android or iOS application over
 the local network. The package is a typed bridge over the same published native
 providers used by the Amwal Flutter package:
 
-- Android: `com.amwal-pay:ecr-sdk:1.0.4` from Maven Central
-- iOS: `AmwalECR ~> 0.2.0` from CocoaPods trunk
+- Android: `com.amwal-pay:ecr-sdk:1.0.5` from Maven Central
+- iOS: `AmwalECR ~> 0.2.1` from CocoaPods trunk
 
 The bridge contains no payment protocol implementation. Android and iOS use the
 native Amwal ECR SDKs unchanged and return the same outcomes for sale, void,
@@ -99,8 +99,28 @@ const terminal = new EcrTerminal({
 The ECR secret is issued by Amwal per terminal. Keep it in the platform keychain
 or secure storage; never place it in source, logs, analytics, or crash reports.
 
-Only `ethernet` and `wifi` open a local ECR listener. `bluetooth` and
-`webService` return a typed `unsupported` failure without sending anything.
+Only `ethernet` and `wifi` open a local ECR listener. `webService` drives the
+terminal through the Amwal payment host over REST instead — no host address,
+no local network:
+
+```tsx
+const hostedTerminal = new EcrTerminal({
+  serialNumber: 'P653200085189',
+  transport: 'webService',
+  config: {
+    merchantId: '13593',
+    terminalId: '742001',
+    environment: 'UAT', // 'SIT' | 'UAT' | 'PROD'
+    secureHashKey: webServiceSecretFromSecureStorage,
+  },
+});
+```
+
+The Web Service path signs with its own secret (different from the LAN key);
+both are issued by Amwal and both travel through `secureHashKey`. Receipt fetch
+is only available on the local transports, and `isReachable()` resolves `false`
+for `webService` — there is no local listener to probe. `bluetooth` and
+`usbCable` return a typed `unsupported` failure without sending anything.
 
 ## Operations
 

@@ -10,7 +10,7 @@ enum ReactEcrMapping {
         case let .approved(value):
             return [
                 "outcome": "approved",
-                "merchantReferenceId": value.merchantReferenceId,
+                "merchantReferenceId": value.merchantReference,
                 "amount": value.amount,
                 "responseCode": value.responseCode,
                 "rrn": value.rrn,
@@ -23,7 +23,7 @@ enum ReactEcrMapping {
         case let .declined(value):
             return [
                 "outcome": "declined",
-                "merchantReferenceId": value.merchantReferenceId,
+                "merchantReferenceId": value.merchantReference,
                 "responseCode": value.responseCode,
                 "reason": value.reason,
                 "nextStep": value.nextStep.rawValue,
@@ -135,6 +135,8 @@ enum ReactEcrMapping {
             "isRefunded": value.isRefunded,
             "canVoid": value.canVoid,
             "canRefund": value.canRefund,
+            "partialApproval": value.partialApproval,
+            "authorizedAmount": value.authorizedAmount,
         ]
     }
 }

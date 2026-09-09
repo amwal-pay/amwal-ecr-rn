@@ -18,6 +18,20 @@ import { nativeEcr } from '../native';
 
 const mockNativeEcr = jest.mocked(nativeEcr);
 
+/** Wi‑Fi / LAN signing placeholder (valid hex, not a real secret). */
+const SECURE_HASH_KEY_ECR_WIFI = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+/** Web Service REST signing placeholder (valid hex, not a real secret). */
+const SECURE_HASH_KEY_WEBSERVICE =
+  'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+const WEB_SERVICE_CONFIG = {
+  merchantId: '13593',
+  terminalId: '742001',
+  environment: 'UAT',
+  secureHashKey: SECURE_HASH_KEY_WEBSERVICE,
+} as const;
+
 const approved = {
   outcome: 'approved',
   merchantReferenceId: 'ORDER-1',
@@ -63,7 +77,7 @@ describe('EcrTerminal', () => {
     const terminal = new EcrTerminal({
       host: '192.168.1.50',
       serialNumber: 'P653200085189',
-      config: { secureHashKey: '0011223344556677' },
+      config: { secureHashKey: SECURE_HASH_KEY_ECR_WIFI },
     });
 
     const result = await terminal.sale('1.234', {
@@ -205,12 +219,89 @@ describe('EcrTerminal', () => {
   });
 
   test('does not probe transports that have no local listener', async () => {
+    for (const terminal of [
+      new EcrTerminal({
+        transport: 'webService',
+        config: WEB_SERVICE_CONFIG,
+      }),
+      new EcrTerminal({ host: '192.168.1.50', transport: 'bluetooth' }),
+      new EcrTerminal({ host: '192.168.1.50', transport: 'usbCable' }),
+    ]) {
+      await expect(terminal.isReachable()).resolves.toBe(false);
+    }
+    expect(mockNativeEcr.isReachable).not.toHaveBeenCalled();
+  });
+
+  test('drives a Web Service terminal without a host', async () => {
     const terminal = new EcrTerminal({
-      host: '192.168.1.50',
+      serialNumber: 'P653200085189',
       transport: 'webService',
+      config: WEB_SERVICE_CONFIG,
     });
 
-    await expect(terminal.isReachable()).resolves.toBe(false);
-    expect(mockNativeEcr.isReachable).not.toHaveBeenCalled();
+    const result = await terminal.sale('1.234', {
+      merchantReferenceId: 'ORDER-WS-1',
+    });
+
+    expect(result.outcome).toBe('approved');
+    expect(mockNativeEcr.sale).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: '',
+        transport: 'webService',
+        merchantReferenceId: 'ORDER-WS-1',
+        config: expect.objectContaining({
+          merchantId: '13593',
+          terminalId: '742001',
+          environment: 'UAT',
+          secureHashKey: SECURE_HASH_KEY_WEBSERVICE,
+        }),
+      })
+    );
+  });
+
+  test('refuses a Web Service terminal without its backend identifiers', () => {
+    expect(
+      () =>
+        new EcrTerminal({
+          transport: 'webService',
+          config: { terminalId: '742001' },
+        })
+    ).toThrow('config.merchantId is required');
+    expect(
+      () =>
+        new EcrTerminal({
+          transport: 'webService',
+          config: { merchantId: '13593' },
+        })
+    ).toThrow('config.terminalId is required');
+  });
+
+  test('still requires a host for the IP transports', () => {
+    expect(() => new EcrTerminal({ transport: 'wifi' })).toThrow(
+      'host is required'
+    );
+    expect(() => new EcrTerminal({})).toThrow('host is required');
+  });
+
+  test('normalizes and validates the environment name', () => {
+    const terminal = new EcrTerminal({
+      transport: 'webService',
+      config: {
+        ...WEB_SERVICE_CONFIG,
+        environment: 'uat' as 'UAT',
+      },
+    });
+    expect(terminal.config.environment).toBe('UAT');
+
+    expect(
+      () =>
+        new EcrTerminal({
+          transport: 'webService',
+          config: {
+            ...WEB_SERVICE_CONFIG,
+            environment: 'STAGING' as 'UAT',
+          },
+        })
+    ).toThrow('environment must be one of SIT, UAT, PROD');
   });
 });

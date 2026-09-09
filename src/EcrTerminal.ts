@@ -8,6 +8,7 @@ import {
 import type {
   EcrConfig,
   EcrDatedTransactionOptions,
+  EcrEnvironment,
   EcrInquiry,
   EcrInquiryByReferenceOptions,
   EcrOriginalTransactionOptions,
@@ -29,7 +30,12 @@ const DEFAULT_CONFIG: Required<EcrConfig> = {
   probeTimeoutMs: 3_000,
   secureHashKey: '',
   autoInquireOnFailure: true,
+  merchantId: '',
+  terminalId: '',
+  environment: 'SIT',
 };
+
+const ENVIRONMENTS: readonly EcrEnvironment[] = ['SIT', 'UAT', 'PROD'];
 
 let operationSequence = 0;
 
@@ -108,6 +114,13 @@ function normalizeConfig(config: EcrConfig = {}): Required<EcrConfig> {
       'secureHashKey must be an even-length hexadecimal string of at least 16 characters, or empty.'
     );
   }
+  const environment = String(normalized.environment).toUpperCase();
+  if (!ENVIRONMENTS.includes(environment as EcrEnvironment)) {
+    throw new TypeError(
+      `environment must be one of ${ENVIRONMENTS.join(', ')}.`
+    );
+  }
+  normalized.environment = environment as EcrEnvironment;
   return normalized;
 }
 
@@ -127,10 +140,17 @@ export class EcrTerminal {
   readonly config: Required<EcrConfig>;
 
   constructor(options: EcrTerminalOptions) {
-    this.host = requireText(options.host, 'host');
     this.serialNumber = options.serialNumber?.trim() ?? '';
     this.transport = options.transport ?? 'wifi';
     this.config = normalizeConfig(options.config);
+    if (this.transport === 'webService') {
+      // The payment host addresses the terminal; there is no IP to dial.
+      this.host = options.host?.trim() ?? '';
+      requireText(this.config.merchantId, 'config.merchantId');
+      requireText(this.config.terminalId, 'config.terminalId');
+    } else {
+      this.host = requireText(options.host ?? '', 'host');
+    }
   }
 
   isReachable(): Promise<boolean> {

@@ -1,7 +1,11 @@
 package com.amwalecr
 
 import com.amwalpay.ecr.EcrConfig
-import com.amwalpay.ecr.EcrTerminal
+import com.amwalpay.ecr.EcrEnvironment
+import com.amwalpay.ecr.EcrLink
+import com.amwalpay.ecr.EcrLogger
+import com.amwalpay.ecr.EcrOpenedSession
+import com.amwalpay.ecr.EcrSessions
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableMap
@@ -33,7 +37,9 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
     }
     scope.launch {
       try {
-        promise.resolve(call.terminal.isReachable())
+        promise.resolve(call.session.probeReachability()?.reachable == true)
+      } catch (error: IllegalArgumentException) {
+        promise.reject(ECR_INVALID_ARGUMENT, error.message ?: "Invalid ECR arguments", error)
       } catch (error: Exception) {
         promise.reject(ECR_INTERNAL, error.message ?: "Reachability probe failed", error)
       }
@@ -43,9 +49,9 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
   override fun sale(request: ReadableMap, promise: Promise) {
     run(request, promise) { call ->
       EcrMapping.result(
-        call.terminal.sale(
+        call.session.sale(
           amount = call.requiredAmount(),
-          merchantReferenceId = call.merchantReferenceId,
+          merchantReference = call.merchantReferenceId,
         ),
       )
     }
@@ -54,10 +60,10 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
   override fun voidTransaction(request: ReadableMap, promise: Promise) {
     run(request, promise) { call ->
       EcrMapping.result(
-        call.terminal.void(
+        call.session.void(
           receiptNumber = call.requiredReceiptNumber("A void"),
           originalTerminalId = call.originalTerminalId,
-          merchantReferenceId = call.merchantReferenceId,
+          merchantReference = call.merchantReferenceId,
         ),
       )
     }
@@ -66,12 +72,12 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
   override fun refund(request: ReadableMap, promise: Promise) {
     run(request, promise) { call ->
       EcrMapping.result(
-        call.terminal.refund(
+        call.session.refund(
           amount = call.requiredAmount(),
           receiptNumber = call.requiredReceiptNumber("A refund"),
           transactionDate = call.transactionDate,
           originalTerminalId = call.originalTerminalId,
-          merchantReferenceId = call.merchantReferenceId,
+          merchantReference = call.merchantReferenceId,
         ),
       )
     }
@@ -80,11 +86,10 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
   override fun inquire(request: ReadableMap, promise: Promise) {
     run(request, promise) { call ->
       EcrMapping.inquiry(
-        call.terminal.inquire(
+        call.session.inquire(
           receiptNumber = call.requiredReceiptNumber("An inquiry"),
           transactionDate = call.transactionDate,
           originalTerminalId = call.originalTerminalId,
-          merchantReferenceId = call.merchantReferenceId,
         ),
       )
     }
@@ -93,11 +98,11 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
   override fun inquireByReference(request: ReadableMap, promise: Promise) {
     run(request, promise) { call ->
       EcrMapping.inquiry(
-        call.terminal.inquireByReference(
+        call.session.inquireByReference(
           originalReference = call.requiredOriginalReference(),
           transactionDate = call.transactionDate,
           originalTerminalId = call.originalTerminalId,
-          merchantReferenceId = call.merchantReferenceId,
+          merchantReference = call.merchantReferenceId,
         ),
       )
     }
@@ -106,11 +111,10 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
   override fun receipt(request: ReadableMap, promise: Promise) {
     run(request, promise) { call ->
       EcrMapping.receipt(
-        call.terminal.receipt(
+        call.session.receipt(
           receiptNumber = call.requiredReceiptNumber("A receipt"),
           transactionDate = call.transactionDate,
           originalTerminalId = call.originalTerminalId,
-          merchantReferenceId = call.merchantReferenceId,
         ),
       )
     }
@@ -159,13 +163,13 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
     val call = parse(request, promise) ?: return
     val reply = OneShotPromise(promise)
 
-    if (!call.isIpTransport) {
+    if (!call.isSupportedTransport) {
       reply.resolve(
         EcrMapping.failedResult(
           merchantReferenceId = "",
           kind = EcrMapping.UNSUPPORTED,
-          message = "A terminal opens its ECR listener only for ethernet and wifi. " +
-            "Transport '${call.transport}' is not handled by this library, so nothing was sent.",
+          message = "This library drives a terminal over ethernet, wifi, or the Web Service " +
+            "REST path. Transport '${call.transport}' is not handled, so nothing was sent.",
         ),
       )
       return
@@ -226,7 +230,7 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
 
   private class Call(private val raw: ReadableMap) {
     val operationId = raw.requiredString("operationId")
-    val host = raw.requiredString("host")
+    val host = raw.optionalString("host")
     val serialNumber = raw.optionalString("serialNumber")
     val transport = raw.optionalString("transport").ifEmpty { "wifi" }
     val transactionDate = raw.optionalString("transactionDate")
@@ -234,8 +238,32 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
     val merchantReferenceId = raw.optionalString("merchantReferenceId")
     private val config = raw.config()
 
-    val terminal = EcrTerminal(host = host, serialNumber = serialNumber, config = config)
     val isIpTransport get() = transport == "ethernet" || transport == "wifi"
+    val isWebService get() = transport == "webService" || transport == "web_service"
+    val isSupportedTransport get() = isIpTransport || isWebService
+
+    /**
+     * The SDK session for this call's transport: TCP for ethernet/wifi, the
+     * hosted REST path for webService. Built lazily so an unsupported
+     * transport is answered as a typed failure before any session exists.
+     */
+    val session: EcrOpenedSession by lazy {
+      val link = if (isWebService) {
+        EcrLink.WebService(
+          merchantId = config.merchantId,
+          terminalId = config.terminalId,
+        )
+      } else {
+        EcrLink.Lan(host = host, port = config.port)
+      }
+      val plan = EcrSessions.plan(link = link, config = config)
+      require(plan.isReady) { plan.issues.joinToString("; ") }
+      EcrSessions.open(
+        terminalSerial = serialNumber,
+        plan = plan,
+        logger = EcrLogger.None,
+      )
+    }
 
     fun requiredAmount(): BigDecimal {
       val text = raw.requiredString("amount")
@@ -290,5 +318,8 @@ private fun ReadableMap.config(): EcrConfig {
     probeTimeout = (if (source.hasKey("probeTimeoutMs")) source.getDouble("probeTimeoutMs").toLong() else 3_000L).milliseconds,
     secureHashKey = source.optionalString("secureHashKey"),
     autoInquireOnFailure = if (source.hasKey("autoInquireOnFailure")) source.getBoolean("autoInquireOnFailure") else true,
+    merchantId = source.optionalString("merchantId"),
+    terminalId = source.optionalString("terminalId"),
+    environment = EcrEnvironment.fromName(source.optionalString("environment")),
   )
 }

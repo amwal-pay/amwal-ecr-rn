@@ -10,6 +10,7 @@ export type {
   EcrConfig,
   EcrDatedTransactionOptions,
   EcrDeclined,
+  EcrEnvironment,
   EcrFailed,
   EcrFailure,
   EcrFailureKind,
