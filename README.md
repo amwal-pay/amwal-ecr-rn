@@ -1,11 +1,14 @@
 # Amwal ECR for React Native
 
 Drive an Amwal POS terminal from a React Native Android or iOS application over
-the local network. The package is a typed bridge over the same published native
+Wi-Fi, the Amwal payment host (Web Service), and on Android also a USB cable or
+the Amwal payment app on the same device. The package is a typed bridge over the same published native
 providers used by the Amwal Flutter package:
 
-- Android: `com.amwal-pay:ecr-sdk:1.0.5` from Maven Central
-- iOS: `AmwalECR ~> 0.2.1` from CocoaPods trunk
+- Android: `com.amwal-pay:ecr-sdk:1.0.6` from Maven Central, or a local
+  `ECR-simulator/ecr-sdk` module
+- iOS: `AmwalECR ~> 0.2.1` from CocoaPods trunk, or a local
+  `AmwalECR-iOS-CocoaPods` / `AmwalECR-iOS-SPM` checkout
 
 The bridge contains no payment protocol implementation. Android and iOS use the
 native Amwal ECR SDKs unchanged and return the same outcomes for sale, void,
@@ -71,7 +74,15 @@ Add a user-facing reason to the application `Info.plist`:
 <string>Connects to the payment terminal to take card payments.</string>
 ```
 
-Android's `INTERNET` permission is contributed by the library manifest.
+Android's manifest entries are contributed by the library and merge into your
+app automatically:
+
+- `INTERNET` and `ACCESS_NETWORK_STATE` for Wi-Fi and Web Service.
+- `uses-feature android.hardware.usb.host` (`required="false"`), so USB cable
+  mode does not exclude devices without a USB host port.
+- `<queries>` for the Amwal payment app (`com.amwalpay.pos`) and its
+  `com.amwalpay.pos.ecr.TRANSACTION` action, so app to app can see whether the
+  payment app is installed on Android 11+.
 
 ## Create a terminal
 
@@ -119,8 +130,57 @@ const hostedTerminal = new EcrTerminal({
 The Web Service path signs with its own secret (different from the LAN key);
 both are issued by Amwal and both travel through `secureHashKey`. Receipt fetch
 is only available on the local transports, and `isReachable()` resolves `false`
-for `webService` — there is no local listener to probe. `bluetooth` and
-`usbCable` return a typed `unsupported` failure without sending anything.
+for `webService` — there is no local listener to probe.
+
+### Transport support
+
+Modes match the TMS `ecrMode` values.
+
+| Transport | `ecrMode` | Android | iOS |
+|---|---|---|---|
+| `usbCable` | 1 | Driven over a USB accessory channel | `unsupported`, nothing sent |
+| `wifi` (and `ethernet`) | 2 | Driven | Driven |
+| `bluetooth` | 3 | Refused before anything is sent | Refused before anything is sent |
+| `webService` | 4 | Driven over REST | Driven over REST |
+| `appToApp` | 5 | Hands the request to `com.amwalpay.pos` on the same device | `unsupported`, nothing sent |
+
+The iOS SDK (`AmwalECR` 0.2.2, the same pod the Flutter bridge uses) can describe
+a USB cable link, but the till has to supply the byte channel and this bridge
+does not open a cable, matching Flutter on iOS. Wi-Fi, ethernet (as Wi-Fi), and
+Web Service go through `EcrSessions.plan` / `EcrSessions.open` on both
+platforms.
+
+On Android, `usbCable` and `appToApp` need no `host`. For `appToApp` the payment
+app must be installed and a foreground Activity must exist, because the request
+is an Activity result exchange. The library never launches the payment app just
+to check for it. `isReachable()` resolves `false` for every transport that has no
+local listener to probe.
+
+### Sign-on and close receipt
+
+`signOn()` asks the terminal what it is and which transactions it permits.
+`closeReceipt()` tells it to leave its receipt and return to idle.
+
+```tsx
+const signOn = await terminal.signOn();
+if (signOn.outcome === 'available') {
+  const { terminalName, ecrMode, permitted } = signOn.capabilities;
+  // permitted: [{ messageType, minAmount, maxAmount }, ...]
+}
+
+await terminal.closeReceipt();
+```
+
+| Transport | `signOn()` / `closeReceipt()` |
+|---|---|
+| Wi-Fi | Android and iOS |
+| USB cable | Android only |
+| App to app, Web Service, Bluetooth | Answer without sending anything |
+
+`signOn()` returns `available`, `unavailable` (the terminal answered but is not
+ready; `capabilities.reason` says why), or `failed` with a typed `failure`. It has
+a cancellable `startSignOn()` form. A declined transaction can carry
+`capabilities` when the terminal refused because its profile changed.
 
 ## Operations
 
@@ -199,10 +259,58 @@ Failure kinds are `unreachable`, `timeout`, `malformed`, `connectionLost`,
 `unauthenticated`, `cancelled`, and `unsupported`. The public
 `outcomeIsUnknown` flag is the decision field callers should use.
 
+## Local native SDKs
+
+The example always loads this package. The properties files choose how that
+package resolves `ecr-sdk` and `AmwalECR`, the same way `amwal_ecr` does.
+
+| Platform | Package config | Example override |
+|---|---|---|
+| Android | `android/gradle.properties` | `example/android/gradle.properties` |
+| iOS | `ios/ecr_sdk.properties` | `example/ios/ecr_sdk.properties` |
+
+The package defaults to the published SDKs (`maven` / `cocoapods`). On Android,
+Gradle reads the library module's own `android/gradle.properties` in preference
+to the example's, so the example's `ecrSdkDependency=project` does not take
+effect by itself. Pass it on the command line to build the example against the
+local `ECR-simulator`:
+
+```bash
+cd example
+npx react-native run-android --extra-params "-PecrSdkDependency=project"
+# or: cd android && ./gradlew :app:assembleDebug -PecrSdkDependency=project
+```
+
+The build log states which source was used: "Using ECR SDK from project module
+:ecr-sdk" or "from Maven".
+
+Android `ecrSdkDependency`:
+
+| Value | Use when |
+|---|---|
+| `project` | Live `:ecr-sdk` from sibling `ECR-simulator` (the example default) |
+| `jar` | `cd ../ECR-simulator && ./gradlew :ecr-sdk:jar` |
+| `maven` | Published `com.amwal-pay:ecr-sdk` |
+
+iOS `ecrSdkDependency`:
+
+| Value | What the example Podfile does |
+|---|---|
+| `project` | `pod 'AmwalECR', :path =>` sibling `AmwalECR-iOS-CocoaPods` |
+| `cocoapods` | Trunk, from `RNAmwalEcr.podspec` |
+| `spm` | Prints the sibling `AmwalECR-iOS-SPM` path to add in Xcode |
+
+Paths assume this package, `ECR-simulator`, `AmwalECR-iOS-CocoaPods`, and
+`AmwalECR-iOS-SPM` sit under the same parent directory. One-off:
+
+```bash
+ECR_SDK_DEPENDENCY=cocoapods pod install
+```
+
 ## Development
 
 ```bash
-corepack yarn install
+corepack yarn install        # or: node .yarn/releases/yarn-4.11.0.cjs install
 corepack yarn verify
 
 cd example/android
@@ -215,7 +323,36 @@ xcodebuild -workspace AmwalEcrExample.xcworkspace \
   -configuration Debug CODE_SIGNING_ALLOWED=NO build
 ```
 
-The example intentionally does not persist terminal details or secrets.
+The repository pins Yarn 4.11 (`.yarnrc.yml`), so the bundled release runs even
+where `yarn` and `corepack` are not installed. Install from the repository root:
+the example is a workspace and gets its dependencies from there.
+
+The example saves its terminals and Wi-Fi / Web Service signing keys on the
+device with `@react-native-async-storage/async-storage`. That is convenient for a
+sample till; a production app should keep the ECR secret in the platform
+keychain or keystore instead.
+
+### Running the example
+
+```bash
+cd example
+npx react-native start
+npx react-native run-android   # or run-ios
+```
+
+- **Android on a USB device:** run `adb reverse tcp:8081 tcp:8081` so the device
+  can reach Metro. Without it the app shows "Unable to load script". The mapping
+  is lost when the device reconnects.
+- **After adding or updating a native dependency:** rebuild the app. A JS reload
+  is not enough. On Android, delete `example/android/build/generated/autolinking`
+  if Gradle keeps the old module list; on iOS, run `pod install` again.
+  `NativeModule: AsyncStorage is null` means the installed app predates that
+  dependency.
+- **iOS:** the example Podfile raises every pod's deployment target to the
+  project minimum, because some resource bundles (for example AsyncStorage's)
+  default to iOS 13.4, which current Xcode rejects.
+- **Metro cache:** if a newly installed package is still "unable to resolve",
+  restart Metro with `--reset-cache`.
 
 ## Continuous integration
 

@@ -21,7 +21,7 @@ enum ReactEcrMapping {
                 "raw": value.raw,
             ]
         case let .declined(value):
-            return [
+            var map: [String: Any] = [
                 "outcome": "declined",
                 "merchantReferenceId": value.merchantReference,
                 "responseCode": value.responseCode,
@@ -29,6 +29,10 @@ enum ReactEcrMapping {
                 "nextStep": value.nextStep.rawValue,
                 "raw": value.raw,
             ]
+            if let capabilities = value.capabilities {
+                map["capabilities"] = self.capabilities(capabilities)
+            }
+            return map
         case let .failed(reference, failure, recovered):
             var value: [String: Any] = [
                 "outcome": "failed",
@@ -90,6 +94,77 @@ enum ReactEcrMapping {
                 "failure": self.failure(failure),
             ]
         }
+    }
+
+    static func receiptClosed(_ closed: EcrReceiptClosed) -> [String: Any] {
+        switch closed {
+        case let .idle(reference, raw):
+            return [
+                "outcome": "idle",
+                "merchantReferenceId": reference,
+                "raw": raw,
+            ]
+        case let .refused(reference, responseCode, reason, raw):
+            return [
+                "outcome": "refused",
+                "merchantReferenceId": reference,
+                "responseCode": responseCode,
+                "reason": reason,
+                "raw": raw,
+            ]
+        case let .failed(reference, failure):
+            return [
+                "outcome": "failed",
+                "merchantReferenceId": reference,
+                "failure": self.failure(failure),
+            ]
+        }
+    }
+
+    static func signOn(_ signOn: EcrSignOn) -> [String: Any] {
+        switch signOn {
+        case let .available(reference, capabilities, raw):
+            return [
+                "outcome": "available",
+                "merchantReferenceId": reference,
+                "capabilities": self.capabilities(capabilities),
+                "raw": raw,
+            ]
+        case let .unavailable(reference, reason, capabilities, raw):
+            return [
+                "outcome": "unavailable",
+                "merchantReferenceId": reference,
+                "reason": reason,
+                "capabilities": self.capabilities(capabilities),
+                "raw": raw,
+            ]
+        case let .failed(reference, failure):
+            return [
+                "outcome": "failed",
+                "merchantReferenceId": reference,
+                "failure": self.failure(failure),
+            ]
+        }
+    }
+
+    static func capabilities(_ value: EcrTerminalCapabilities) -> [String: Any] {
+        [
+            "available": value.available,
+            "reason": value.reason,
+            "ecrMode": value.transport.ecrMode,
+            "terminalName": value.terminalName,
+            "currencyCode": value.currencyCode,
+            "minorUnitDigits": value.minorUnitDigits,
+            "eReceipt": value.eReceipt,
+            "physicalReceipt": value.physicalReceipt,
+            "permitted": value.permitted.map { entry in
+                [
+                    "messageType": entry.type.messageType,
+                    "minAmount": entry.minAmount,
+                    "maxAmount": entry.maxAmount,
+                ]
+            },
+        ]
     }
 
     static func failedResult(

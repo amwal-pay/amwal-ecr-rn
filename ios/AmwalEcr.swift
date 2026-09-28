@@ -31,7 +31,13 @@ final class AmwalEcrImpl: NSObject {
                 resolve(false)
                 return
             }
-            let session = try call.makeSession()
+            let session: EcrOpenedSession
+            do {
+                session = try call.makeSession()
+            } catch is SessionUnavailable {
+                resolve(false)
+                return
+            }
             queue.async { resolve(session.probeReachability()?.reachable ?? false) }
         } catch {
             rejectError(error, reject)
@@ -121,6 +127,30 @@ final class AmwalEcrImpl: NSObject {
         }
     }
 
+    @objc func signOn(
+        _ request: [String: Any],
+        resolver resolve: @escaping RCTPromiseResolveBlock,
+        rejecter reject: @escaping RCTPromiseRejectBlock
+    ) {
+        run(request, resolve, reject) { call, session in
+            ReactEcrMapping.signOn(
+                try session.signOn(merchantReference: call.merchantReferenceId)
+            )
+        }
+    }
+
+    @objc func closeReceipt(
+        _ request: [String: Any],
+        resolver resolve: @escaping RCTPromiseResolveBlock,
+        rejecter reject: @escaping RCTPromiseRejectBlock
+    ) {
+        run(request, resolve, reject) { call, session in
+            ReactEcrMapping.receiptClosed(
+                try session.closeReceipt(merchantReference: call.merchantReferenceId)
+            )
+        }
+    }
+
     @objc func receipt(
         _ request: [String: Any],
         resolver resolve: @escaping RCTPromiseResolveBlock,
@@ -192,19 +222,14 @@ final class AmwalEcrImpl: NSObject {
             let call = try Call(request)
             let reply = OneShotReply(resolve: resolve, reject: reject)
 
-            guard call.isSupportedTransport else {
-                reply.resolve(
-                    ReactEcrMapping.failedResult(
-                        merchantReferenceId: "",
-                        kind: ReactEcrMapping.unsupported,
-                        message: "This library drives a terminal over ethernet, wifi, or the Web Service "
-                            + "REST path. Transport '\(call.transport)' is not handled, so nothing was sent."
-                    )
-                )
+            let session: EcrOpenedSession
+            do {
+                session = try call.makeSession()
+            } catch let unavailable as SessionUnavailable {
+                reply.resolve(unavailable.failedResult(merchantReferenceId: call.merchantReferenceId))
                 return
             }
 
-            let session = try call.makeSession()
             let operation = RunningOperation(
                 session: session,
                 reply: reply,
@@ -338,24 +363,38 @@ private struct Call {
         transactionDate = raw["transactionDate"] as? String ?? ""
         originalTerminalId = raw["originalTerminalId"] as? String ?? ""
         merchantReferenceId = raw["merchantReferenceId"] as? String ?? ""
-        config = try Self.config(raw["config"] as? [String: Any])
+        config = Self.config(raw["config"] as? [String: Any])
     }
 
     var isIpTransport: Bool { transport == "ethernet" || transport == "wifi" }
     var isWebService: Bool { transport == "webService" || transport == "web_service" }
-    var isSupportedTransport: Bool { isIpTransport || isWebService }
 
-    /// The SDK session for this call's transport: TCP for ethernet/wifi, the
-    /// hosted REST path for webService.
+    /// Wi-Fi / ethernet and Web Service, through `EcrSessions.plan` / `open`.
+    ///
+    /// The same dispatch the Flutter iOS bridge uses against AmwalECR 0.2.1.
+    /// USB cable is a link in that SDK, and the caller has to supply the byte
+    /// channel. This bridge does not open a cable — there is no External
+    /// Accessory driver here, matching Flutter — so USB, app to app, and
+    /// Bluetooth answer unsupported and send nothing.
     func makeSession() throws -> EcrOpenedSession {
-        let link: EcrLink = isWebService
-            ? .webService(merchantId: config.merchantId, terminalId: config.terminalId)
-            : .lan(host: host, port: config.port)
-        let plan = EcrSessions.plan(link: link, config: config)
-        guard plan.isReady else {
-            throw EcrInvalidArgument(plan.issues.joined(separator: "; "))
+        let link: EcrLink
+        if isWebService {
+            link = .webService(merchantId: config.merchantId, terminalId: config.terminalId)
+        } else if isIpTransport {
+            link = .lan(host: host, port: config.port)
+        } else {
+            throw SessionUnavailable.unsupported(transport)
         }
-        return EcrSessions.open(terminalSerial: serialNumber, plan: plan)
+
+        let plan = EcrSessions.plan(
+            link: link,
+            config: config,
+            rawSecureHashKey: config.secureHashKey
+        )
+        guard plan.isReady else {
+            throw SessionUnavailable.notReady(plan.issues)
+        }
+        return EcrSessions.open(terminalSerial: serialNumber, plan: plan, logger: .none)
     }
 
     func requiredAmount() throws -> Decimal {
@@ -390,7 +429,7 @@ private struct Call {
         return value
     }
 
-    private static func config(_ raw: [String: Any]?) throws -> EcrConfig {
+    private static func config(_ raw: [String: Any]?) -> EcrConfig {
         let raw = raw ?? [:]
         var value = EcrConfig()
         if let field = raw["ecrId"] as? String, !field.isEmpty { value.ecrId = field }
@@ -405,17 +444,37 @@ private struct Call {
         if let field = raw["merchantId"] as? String { value.merchantId = field }
         if let field = raw["terminalId"] as? String { value.terminalId = field }
         if let field = raw["environment"] as? String { value.environment = EcrEnvironment.fromName(field) }
-
-        guard (0 ... 4).contains(value.minorUnitDigits) else {
-            throw EcrInvalidArgument("minorUnitDigits must be between 0 and 4")
-        }
-        guard (1 ... 65_535).contains(value.port) else {
-            throw EcrInvalidArgument("port must be between 1 and 65535")
-        }
-        if let message = value.secureHashKeyError {
-            throw EcrInvalidArgument(message)
-        }
         return value
+    }
+}
+
+/// A call that must not open a socket: the transport is not on iOS, or the
+/// session plan is not ready. Answered as a failed result, the way the Flutter
+/// iOS bridge answers `InvalidPlanTerminalPort` and an unsupported transport.
+private enum SessionUnavailable: Error {
+    case unsupported(String)
+    case notReady([String])
+
+    func failedResult(merchantReferenceId: String) -> [String: Any] {
+        switch self {
+        case let .unsupported(transport):
+            return ReactEcrMapping.failedResult(
+                merchantReferenceId: merchantReferenceId,
+                kind: ReactEcrMapping.unsupported,
+                message: "A terminal opens its ECR listener for Wi-Fi, USB cable (Android), or "
+                    + "Web Service REST. \"\(transport)\" is driven by other machinery, "
+                    + "so nothing was sent."
+            )
+        case let .notReady(issues):
+            let message = issues.isEmpty
+                ? "Terminal configuration is incomplete"
+                : issues.joined(separator: "; ")
+            return ReactEcrMapping.failedResult(
+                merchantReferenceId: merchantReferenceId,
+                kind: "malformed",
+                message: message
+            )
+        }
     }
 }
 

@@ -46,8 +46,44 @@ android {
   }
 }
 
+def ecrSdkDependency = (findProperty("ecrSdkDependency") ?: "maven").toString().trim()
+def ecrSdkVersion = (findProperty("ecrSdkVersion") ?: "1.0.6").toString().trim()
+def ecrSdkJarPath = (findProperty("ecrSdkJarPath")
+        ?: "../../ECR-simulator/ecr-sdk/build/libs/ecr-sdk-${ecrSdkVersion}.jar").toString().trim()
+
+repositories {
+  google()
+  mavenCentral()
+  mavenLocal()
+}
+
 dependencies {
   implementation "com.facebook.react:react-android"
-  implementation "com.amwal-pay:ecr-sdk:1.0.5"
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+
+  switch (ecrSdkDependency) {
+    case "maven":
+      println "[react-native-amwal-ecr] Using ECR SDK from Maven: com.amwal-pay:ecr-sdk:${ecrSdkVersion}"
+      implementation "com.amwal-pay:ecr-sdk:${ecrSdkVersion}"
+      break
+    case "jar":
+      def jarFile = file(ecrSdkJarPath)
+      if (!jarFile.exists()) {
+        throw new GradleException(
+                "ecr-sdk JAR not found at ${jarFile.absolutePath}. " +
+                        "Run './gradlew :ecr-sdk:jar' in the ECR-simulator checkout first.")
+      }
+      println "[react-native-amwal-ecr] Using ECR SDK from JAR: ${jarFile.absolutePath}"
+      implementation files(jarFile)
+      implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1"
+      implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3"
+      break
+    case "project":
+      println "[react-native-amwal-ecr] Using ECR SDK from project module :ecr-sdk"
+      implementation project(":ecr-sdk")
+      break
+    default:
+      throw new GradleException(
+              "Unknown ecrSdkDependency='${ecrSdkDependency}'. Use: project | jar | maven")
+  }
 }

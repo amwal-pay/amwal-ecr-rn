@@ -1,184 +1,231 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, BackHandler, Platform, StyleSheet, View } from 'react-native';
 import {
-  ActivityIndicator,
-  Button,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { EcrTerminal, type EcrResult } from 'react-native-amwal-ecr';
+  EcrTerminal,
+  type EcrSignOn,
+  type EcrTerminalCapabilities,
+} from 'react-native-amwal-ecr';
+import {
+  secureHashKeyFor,
+  type AppSettings,
+  type SavedTerminal,
+} from './model';
+import { TerminalEditScreen } from './screens/TerminalEditScreen';
+import { TerminalsScreen } from './screens/TerminalsScreen';
+import { TransactionScreen } from './screens/TransactionScreen';
+import type { SignOnView } from './signOn';
+import { loadTill, saveTill } from './storage';
+import { colors } from './theme';
+
+type Screen =
+  | { name: 'pay' }
+  | { name: 'terminals' }
+  | { name: 'edit'; originalSerial: string | null };
 
 export default function App() {
-  const [host, setHost] = useState('192.168.1.50');
-  const [serialNumber, setSerialNumber] = useState('');
-  const [secureHashKey, setSecureHashKey] = useState('');
-  const [amount, setAmount] = useState('0.001');
-  const [merchantReferenceId, setMerchantReferenceId] =
-    useState('DEMO-ORDER-1');
-  const [status, setStatus] = useState('Ready');
-  const [result, setResult] = useState<EcrResult | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [terminals, setTerminals] = useState<SavedTerminal[]>([]);
+  const [settings, setSettings] = useState<AppSettings>({
+    environment: 'SIT',
+    wifiSecureHashKey: '',
+    webServiceSecureHashKey: '',
+  });
+  const [screen, setScreen] = useState<Screen>({ name: 'pay' });
+  const [selectedSerial, setSelectedSerial] = useState<string | null>(null);
+  const [signOns, setSignOns] = useState<Record<string, SignOnView>>({});
 
-  const makeTerminal = () =>
+  useEffect(() => {
+    loadTill()
+      .then((loaded) => {
+        setTerminals(loaded.terminals);
+        setSettings(loaded.settings);
+        setSelectedSerial(loaded.terminals[0]?.serialNumber ?? null);
+      })
+      .finally(() => setReady(true));
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    saveTill({ terminals, settings }).catch(() => undefined);
+  }, [ready, terminals, settings]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (screen.name === 'edit') {
+        setScreen({ name: 'terminals' });
+        return true;
+      }
+      if (screen.name === 'terminals') {
+        setScreen({ name: 'pay' });
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+  }, [screen]);
+
+  const open = (terminal: SavedTerminal) =>
     new EcrTerminal({
-      host,
-      serialNumber,
-      config: { secureHashKey },
+      host: terminal.ipAddress,
+      serialNumber: terminal.serialNumber,
+      transport: terminal.transport,
+      config: {
+        port: terminal.port || 9100,
+        merchantId: terminal.merchantId,
+        terminalId: terminal.terminalId,
+        environment: settings.environment,
+        secureHashKey: secureHashKeyFor(terminal, settings),
+      },
     });
 
-  const probe = async () => {
-    setBusy(true);
-    setResult(null);
-    try {
-      const reachable = await makeTerminal().isReachable();
-      setStatus(
-        reachable ? 'Terminal is reachable' : 'Terminal did not answer'
-      );
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
+  const applySignOn = (serial: string, answer: EcrSignOn) => {
+    if (answer.outcome === 'available') {
+      setSignOns((current) => ({
+        ...current,
+        [serial]: answer.capabilities.available
+          ? { kind: 'ready', capabilities: answer.capabilities }
+          : {
+              kind: 'notReady',
+              reason: answer.capabilities.reason || 'Not ready',
+              capabilities: answer.capabilities,
+            },
+      }));
+    } else if (answer.outcome === 'unavailable') {
+      setSignOns((current) => ({
+        ...current,
+        [serial]: {
+          kind: 'notReady',
+          reason: answer.reason,
+          capabilities: answer.capabilities,
+        },
+      }));
+    } else {
+      setSignOns((current) => ({
+        ...current,
+        [serial]: { kind: 'noAnswer', reason: answer.failure.message },
+      }));
     }
   };
 
-  const sale = async () => {
-    setBusy(true);
-    setResult(null);
-    setStatus('Waiting for the terminal…');
+  const check = async (terminal: SavedTerminal) => {
+    if (terminal.transport === 'appToApp') {
+      setSignOns((current) => {
+        const next = { ...current };
+        delete next[terminal.serialNumber];
+        return next;
+      });
+      return;
+    }
+    const key = secureHashKeyFor(terminal, settings);
+    if (!key.trim()) {
+      setSignOns((current) => ({
+        ...current,
+        [terminal.serialNumber]: {
+          kind: 'notReady',
+          reason:
+            terminal.transport === 'webService'
+              ? 'Web Service signing key is not configured'
+              : 'Wi-Fi signing key is not configured',
+        },
+      }));
+      return;
+    }
+    setSignOns((current) => ({
+      ...current,
+      [terminal.serialNumber]: { kind: 'asking' },
+    }));
     try {
-      const next = await makeTerminal().sale(amount, { merchantReferenceId });
-      setResult(next);
-      setStatus(
-        next.outcomeIsUnknown
-          ? 'Outcome unknown — inquire before retrying'
-          : `Completed with outcome: ${next.outcome}`
-      );
+      applySignOn(terminal.serialNumber, await open(terminal).signOn());
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
+      setSignOns((current) => ({
+        ...current,
+        [terminal.serialNumber]: {
+          kind: 'noAnswer',
+          reason: error instanceof Error ? error.message : String(error),
+        },
+      }));
     }
   };
+
+  if (!ready) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (screen.name === 'terminals') {
+    return (
+      <TerminalsScreen
+        settings={settings}
+        signOns={signOns}
+        terminals={terminals}
+        onAdd={() => setScreen({ name: 'edit', originalSerial: null })}
+        onBack={() => setScreen({ name: 'pay' })}
+        onCheck={(terminal) => {
+          check(terminal).catch(() => undefined);
+        }}
+        onDelete={(serial) => {
+          setTerminals((current) => current.filter((terminal) => terminal.serialNumber !== serial));
+          if (selectedSerial === serial) setSelectedSerial(null);
+        }}
+        onEdit={(serial) => setScreen({ name: 'edit', originalSerial: serial })}
+        onSettings={setSettings}
+      />
+    );
+  }
+
+  if (screen.name === 'edit') {
+    return (
+      <TerminalEditScreen
+        original={
+          terminals.find((terminal) => terminal.serialNumber === screen.originalSerial) ?? null
+        }
+        others={terminals.filter((terminal) => terminal.serialNumber !== screen.originalSerial)}
+        onDone={() => setScreen({ name: 'terminals' })}
+        onSave={(terminal) => {
+          setTerminals((current) => {
+            const without = current.filter(
+              (item) => item.serialNumber !== screen.originalSerial
+            );
+            return [...without, terminal];
+          });
+          setSelectedSerial(terminal.serialNumber);
+          setScreen({ name: 'terminals' });
+        }}
+      />
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Amwal ECR</Text>
-        <Text style={styles.subtitle}>
-          React Native native-provider smoke test
-        </Text>
-
-        <Text style={styles.label}>Terminal address</Text>
-        <TextInput
-          autoCapitalize="none"
-          onChangeText={setHost}
-          style={styles.input}
-          value={host}
-        />
-
-        <Text style={styles.label}>Serial number</Text>
-        <TextInput
-          autoCapitalize="characters"
-          onChangeText={setSerialNumber}
-          placeholder="P653200085189"
-          style={styles.input}
-          value={serialNumber}
-        />
-
-        <Text style={styles.label}>ECR secret (not stored or logged)</Text>
-        <TextInput
-          autoCapitalize="none"
-          onChangeText={setSecureHashKey}
-          secureTextEntry
-          style={styles.input}
-          value={secureHashKey}
-        />
-
-        <Text style={styles.label}>Amount in major units</Text>
-        <TextInput
-          keyboardType="decimal-pad"
-          onChangeText={setAmount}
-          style={styles.input}
-          value={amount}
-        />
-
-        <Text style={styles.label}>Merchant reference</Text>
-        <TextInput
-          autoCapitalize="characters"
-          onChangeText={setMerchantReferenceId}
-          style={styles.input}
-          value={merchantReferenceId}
-        />
-
-        <View style={styles.button}>
-          <Button disabled={busy} onPress={probe} title="Check reachability" />
-        </View>
-        <View style={styles.button}>
-          <Button disabled={busy} onPress={sale} title="Start sale" />
-        </View>
-
-        {busy ? <ActivityIndicator size="large" /> : null}
-        <Text style={styles.status}>{status}</Text>
-        {result ? (
-          <Text selectable style={styles.result}>
-            {JSON.stringify(result, null, 2)}
-          </Text>
-        ) : null}
-      </ScrollView>
-    </SafeAreaView>
+    <TransactionScreen
+      open={open}
+      selectedSerial={selectedSerial}
+      settings={settings}
+      signOn={selectedSerial ? signOns[selectedSerial] : undefined}
+      terminals={terminals}
+      onOpenTerminals={() => setScreen({ name: 'terminals' })}
+      onProfile={(serial, capabilities: EcrTerminalCapabilities) =>
+        setSignOns((current) => ({
+          ...current,
+          [serial]: { kind: 'ready', capabilities },
+        }))
+      }
+      onSelect={(terminal) => {
+        setSelectedSerial(terminal.serialNumber);
+        check(terminal).catch(() => undefined);
+      }}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    backgroundColor: '#f5f7fb',
+  loading: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
     flex: 1,
-  },
-  container: {
-    padding: 24,
-  },
-  title: {
-    color: '#13213c',
-    fontSize: 30,
-    fontWeight: '700',
-  },
-  subtitle: {
-    color: '#53627a',
-    marginBottom: 24,
-    marginTop: 4,
-  },
-  label: {
-    color: '#25334d',
-    fontWeight: '600',
-    marginBottom: 6,
-    marginTop: 12,
-  },
-  input: {
-    backgroundColor: '#fff',
-    borderColor: '#ccd4e0',
-    borderRadius: 8,
-    borderWidth: 1,
-    color: '#13213c',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  button: {
-    marginTop: 16,
-  },
-  status: {
-    color: '#13213c',
-    fontWeight: '600',
-    marginTop: 20,
-  },
-  result: {
-    backgroundColor: '#e9eef6',
-    borderRadius: 8,
-    color: '#1a2942',
-    fontFamily: 'Courier',
-    marginTop: 12,
-    padding: 12,
+    justifyContent: 'center',
   },
 });

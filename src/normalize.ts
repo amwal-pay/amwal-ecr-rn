@@ -4,6 +4,7 @@ import type {
   EcrInquiry,
   EcrReceipt,
   EcrResult,
+  EcrSignOn,
 } from './types';
 
 type NativeRecord = Record<string, unknown>;
@@ -52,6 +53,19 @@ export function normalizeInquiry(value: unknown): EcrInquiry {
       throw new Error(
         'The native ECR host returned an unknown inquiry outcome.'
       );
+  }
+}
+
+export function normalizeSignOn(value: unknown): EcrSignOn {
+  const raw = record(value, 'sign-on');
+  switch (raw.outcome) {
+    case 'available':
+    case 'unavailable':
+      return raw as unknown as EcrSignOn;
+    case 'failed':
+      return { ...raw, failure: failure(raw.failure) } as EcrSignOn;
+    default:
+      throw new Error('The native ECR host returned an unknown sign-on outcome.');
   }
 }
 

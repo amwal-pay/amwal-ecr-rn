@@ -4,6 +4,7 @@ export {
   normalizeInquiry,
   normalizeReceipt,
   normalizeResult,
+  normalizeSignOn,
 } from './normalize';
 export type {
   EcrApproved,
@@ -25,9 +26,15 @@ export type {
   EcrReceiptFailed,
   EcrReceiptReady,
   EcrReceiptUnavailable,
+  EcrPermittedTransaction,
   EcrReferenceOptions,
+  EcrSignOn,
+  EcrSignOnAvailable,
+  EcrSignOnFailed,
+  EcrSignOnUnavailable,
   EcrRefundOptions,
   EcrResult,
+  EcrTerminalCapabilities,
   EcrTerminalOptions,
   EcrTransaction,
   EcrTransport,

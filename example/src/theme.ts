@@ -1,0 +1,15 @@
+export const colors = {
+  primary: '#0B5FFF',
+  onPrimary: '#FFFFFF',
+  surface: '#FFFBFE',
+  surfaceVariant: '#E7E0EC',
+  onSurface: '#1C1B1F',
+  onSurfaceVariant: '#49454F',
+  outline: '#79747E',
+  error: '#B3261E',
+  errorContainer: '#F9DEDC',
+  approved: '#1B8A3A',
+  declined: '#C62828',
+  ready: '#2E7D32',
+  scrim: 'rgba(0,0,0,0.4)',
+};

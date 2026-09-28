@@ -5,6 +5,8 @@ require Pod::Executable.execute_command('node', ['-p',
     {paths: [process.argv[1]]},
   )', __dir__]).strip
 
+require 'pathname'
+
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
@@ -12,6 +14,24 @@ linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
   Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
   use_frameworks! :linkage => linkage.to_sym
+end
+
+def load_ecr_sdk_properties(path)
+  props = {}
+  return props unless File.exist?(path)
+  File.foreach(path) do |line|
+    line = line.strip
+    next if line.empty? || line.start_with?('#')
+    key, value = line.split('=', 2)
+    props[key.strip] = value.strip if key && value
+  end
+  props
+end
+
+def merged_ecr_sdk_properties
+  plugin = load_ecr_sdk_properties(File.expand_path('../../ios/ecr_sdk.properties', __dir__))
+  example = load_ecr_sdk_properties(File.expand_path('ecr_sdk.properties', __dir__))
+  plugin.merge(example)
 end
 
 target 'AmwalEcrExample' do
@@ -23,6 +43,33 @@ target 'AmwalEcrExample' do
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
+  # Local AmwalECR, same switch as the Flutter example.
+  # project uses AmwalECR-iOS-CocoaPods. cocoapods uses the podspec range.
+  ecr = merged_ecr_sdk_properties
+  ecr_mode = ENV.fetch('ECR_SDK_DEPENDENCY', ecr['ecrSdkDependency'] || 'cocoapods')
+  cocoa_rel = ENV.fetch(
+    'ECR_SDK_ROOT',
+    ecr['ecrSdkCocoaPodsRoot'] || '../../../AmwalECR-iOS-CocoaPods'
+  )
+  case ecr_mode
+  when 'project'
+    sdk_path = File.expand_path(cocoa_rel, __dir__)
+    unless File.directory?(sdk_path)
+      raise "Local AmwalECR checkout not found at #{sdk_path}. Set ecrSdkDependency=cocoapods to use trunk."
+    end
+    pod 'AmwalECR', :path => Pathname.new(sdk_path).relative_path_from(Pathname.new(__dir__)).to_s
+    Pod::UI.puts "[react-native-amwal-ecr] Using local AmwalECR from #{sdk_path}"
+  when 'cocoapods'
+    Pod::UI.puts '[react-native-amwal-ecr] Using AmwalECR from CocoaPods trunk'
+  when 'spm'
+    spm_rel = ecr['ecrSdkSpmRoot'] || '../../../AmwalECR-iOS-SPM'
+    spm_path = File.expand_path(spm_rel, __dir__)
+    Pod::UI.puts "[react-native-amwal-ecr] SwiftPM checkout: #{spm_path}"
+    Pod::UI.puts '[react-native-amwal-ecr] Add that package in Xcode. CocoaPods will not pin AmwalECR.'
+  else
+    raise "Unknown ecrSdkDependency='#{ecr_mode}'. Use: project | cocoapods | spm"
+  end
+
   post_install do |installer|
     react_native_post_install(
       installer,
@@ -30,5 +77,17 @@ target 'AmwalEcrExample' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # Resource-bundle targets (e.g. RNCAsyncStorage) default to iOS 13.4,
+    # below the range current Xcode supports.
+    minimum = min_ios_version_supported.to_f
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |build_config|
+        current = build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+        if current.nil? || current.to_f < minimum
+          build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios_version_supported
+        end
+      end
+    end
   end
 end

@@ -2,7 +2,10 @@ package com.amwalecr
 
 import com.amwalpay.ecr.EcrInquiry
 import com.amwalpay.ecr.EcrReceipt
+import com.amwalpay.ecr.EcrReceiptClosed
 import com.amwalpay.ecr.EcrResult
+import com.amwalpay.ecr.EcrSignOn
+import com.amwalpay.ecr.EcrTerminalCapabilities
 import com.amwalpay.ecr.EcrTransaction
 import com.amwalpay.ecr.Failure
 import com.facebook.react.bridge.Arguments
@@ -33,6 +36,7 @@ internal object EcrMapping {
       putString("reason", result.reason)
       putString("nextStep", result.nextStep.name)
       putString("raw", result.raw)
+      result.capabilities?.let { putMap("capabilities", capabilities(it)) }
     }
 
     is EcrResult.Failed -> Arguments.createMap().apply {
@@ -87,6 +91,47 @@ internal object EcrMapping {
     }
   }
 
+  fun signOn(signOn: EcrSignOn): WritableMap = when (signOn) {
+    is EcrSignOn.Available -> Arguments.createMap().apply {
+      putString("outcome", "available")
+      putString("merchantReferenceId", signOn.merchantReference)
+      putMap("capabilities", capabilities(signOn.capabilities))
+      putString("raw", signOn.raw)
+    }
+    is EcrSignOn.Unavailable -> Arguments.createMap().apply {
+      putString("outcome", "unavailable")
+      putString("merchantReferenceId", signOn.merchantReference)
+      putString("reason", signOn.reason)
+      putMap("capabilities", capabilities(signOn.capabilities))
+      putString("raw", signOn.raw)
+    }
+    is EcrSignOn.Failed -> Arguments.createMap().apply {
+      putString("outcome", "failed")
+      putString("merchantReferenceId", signOn.merchantReference)
+      putMap("failure", failure(signOn.failure))
+    }
+  }
+
+  fun receiptClosed(closed: EcrReceiptClosed): WritableMap = when (closed) {
+    is EcrReceiptClosed.Idle -> Arguments.createMap().apply {
+      putString("outcome", "idle")
+      putString("merchantReferenceId", closed.merchantReference)
+      putString("raw", closed.raw)
+    }
+    is EcrReceiptClosed.Refused -> Arguments.createMap().apply {
+      putString("outcome", "refused")
+      putString("merchantReferenceId", closed.merchantReference)
+      putString("responseCode", closed.responseCode)
+      putString("reason", closed.reason)
+      putString("raw", closed.raw)
+    }
+    is EcrReceiptClosed.Failed -> Arguments.createMap().apply {
+      putString("outcome", "failed")
+      putString("merchantReferenceId", closed.merchantReference)
+      putMap("failure", failure(closed.failure))
+    }
+  }
+
   fun failedResult(
     merchantReferenceId: String,
     kind: String,
@@ -120,6 +165,28 @@ internal object EcrMapping {
     putBoolean("canRefund", value.canRefund)
     putBoolean("partialApproval", value.partialApproval)
     putString("authorizedAmount", value.authorizedAmount)
+  }
+
+  private fun capabilities(value: EcrTerminalCapabilities): WritableMap {
+    val permitted = Arguments.createArray()
+    value.permitted.forEach { entry ->
+      permitted.pushMap(Arguments.createMap().apply {
+        putString("messageType", entry.type.messageType)
+        putString("minAmount", entry.minAmount)
+        putString("maxAmount", entry.maxAmount)
+      })
+    }
+    return Arguments.createMap().apply {
+      putBoolean("available", value.available)
+      putString("reason", value.reason)
+      putInt("ecrMode", value.transport.ecrMode)
+      putString("terminalName", value.terminalName)
+      putString("currencyCode", value.currencyCode)
+      putInt("minorUnitDigits", value.minorUnitDigits)
+      putBoolean("eReceipt", value.eReceipt)
+      putBoolean("physicalReceipt", value.physicalReceipt)
+      putArray("permitted", permitted)
+    }
   }
 
   private fun failure(value: Failure): WritableMap = Arguments.createMap().apply {

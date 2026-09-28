@@ -28,10 +28,17 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
 
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private val running = ConcurrentHashMap<String, RunningOperation>()
+  private val paymentAppResults = PaymentAppResults()
+
+  override fun initialize() {
+    super.initialize()
+    reactApplicationContext.addActivityEventListener(paymentAppResults)
+  }
 
   override fun isReachable(request: ReadableMap, promise: Promise) {
     val call = parse(request, promise) ?: return
-    if (!call.isIpTransport) {
+    // Web Service has no pre-flight probe. Wi-Fi, USB, and app to app do.
+    if (call.isWebService || !call.isSupportedTransport) {
       promise.resolve(false)
       return
     }
@@ -108,6 +115,35 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  override fun signOn(request: ReadableMap, promise: Promise) {
+    run(request, promise) { call ->
+      if (!call.supportsSignOn) {
+        EcrMapping.failedResult(
+          merchantReferenceId = call.merchantReferenceId,
+          kind = EcrMapping.UNSUPPORTED,
+          message = "Sign-on is only supported over Wi-Fi and USB cable. " +
+            "Transport '${call.transport}' was not asked.",
+        )
+      } else {
+        EcrMapping.signOn(call.session.signOn(call.merchantReferenceId))
+      }
+    }
+  }
+
+  override fun closeReceipt(request: ReadableMap, promise: Promise) {
+    run(request, promise) { call ->
+      if (!call.supportsSignOn) {
+        EcrMapping.failedResult(
+          merchantReferenceId = call.merchantReferenceId,
+          kind = EcrMapping.UNSUPPORTED,
+          message = "Closing the receipt is only supported over Wi-Fi and USB cable.",
+        )
+      } else {
+        EcrMapping.receiptClosed(call.session.closeReceipt(call.merchantReferenceId))
+      }
+    }
+  }
+
   override fun receipt(request: ReadableMap, promise: Promise) {
     run(request, promise) { call ->
       EcrMapping.receipt(
@@ -151,6 +187,7 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
       operation.job.cancel()
     }
     running.clear()
+    reactApplicationContext.removeActivityEventListener(paymentAppResults)
     scope.cancel()
     super.invalidate()
   }
@@ -168,8 +205,9 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
         EcrMapping.failedResult(
           merchantReferenceId = "",
           kind = EcrMapping.UNSUPPORTED,
-          message = "This library drives a terminal over ethernet, wifi, or the Web Service " +
-            "REST path. Transport '${call.transport}' is not handled, so nothing was sent.",
+          message = "This library drives a terminal over Wi-Fi, USB cable, Web Service, " +
+            "or the Amwal payment app on this device. Transport '${call.transport}' " +
+            "is not handled, so nothing was sent.",
         ),
       )
       return
@@ -228,7 +266,7 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  private class Call(private val raw: ReadableMap) {
+  private inner class Call(private val raw: ReadableMap) {
     val operationId = raw.requiredString("operationId")
     val host = raw.optionalString("host")
     val serialNumber = raw.optionalString("serialNumber")
@@ -238,29 +276,56 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
     val merchantReferenceId = raw.optionalString("merchantReferenceId")
     private val config = raw.config()
 
-    val isIpTransport get() = transport == "ethernet" || transport == "wifi"
+    val isIpTransport get() = transport == "wifi" || transport == "ethernet"
     val isWebService get() = transport == "webService" || transport == "web_service"
-    val isSupportedTransport get() = isIpTransport || isWebService
+    val isUsbCable get() = transport == "usbCable" || transport == "usb_cable"
+    val isAppToApp get() = transport == "appToApp" || transport == "app_to_app"
+    val supportsSignOn get() = isIpTransport || isUsbCable
+    val isSupportedTransport get() = isIpTransport || isWebService || isUsbCable || isAppToApp
 
     /**
-     * The SDK session for this call's transport: TCP for ethernet/wifi, the
-     * hosted REST path for webService. Built lazily so an unsupported
-     * transport is answered as a typed failure before any session exists.
+     * The SDK session for this call's transport. Built lazily so an
+     * unsupported transport is answered as a typed failure before any
+     * session exists.
      */
     val session: EcrOpenedSession by lazy {
-      val link = if (isWebService) {
-        EcrLink.WebService(
+      val link = when {
+        isWebService -> EcrLink.WebService(
           merchantId = config.merchantId,
           terminalId = config.terminalId,
         )
-      } else {
-        EcrLink.Lan(host = host, port = config.port)
+        isUsbCable -> EcrLink.UsbCable
+        isAppToApp -> EcrLink.PaymentApp
+        else -> EcrLink.Lan(host = host, port = config.port)
       }
-      val plan = EcrSessions.plan(link = link, config = config)
+      // App to app must not auto-inquire: the inquiry is another handover
+      // that puts the payment app back on screen after the operator left it.
+      val sessionConfig = if (isAppToApp) {
+        config.copy(autoInquireOnFailure = false)
+      } else {
+        config
+      }
+      val plan = EcrSessions.plan(link = link, config = sessionConfig)
       require(plan.isReady) { plan.issues.joinToString("; ") }
       EcrSessions.open(
         terminalSerial = serialNumber,
         plan = plan,
+        usbChannel = if (isUsbCable) {
+          { UsbAccessoryEcrChannel(reactApplicationContext) }
+        } else {
+          null
+        },
+        paymentAppChannel = if (isAppToApp) {
+          {
+            PaymentAppEcrChannel(
+              packageName = PaymentAppEcrChannel.PACKAGE_NAME,
+              activities = { reactApplicationContext.currentActivity },
+              results = paymentAppResults,
+            )
+          }
+        } else {
+          null
+        },
         logger = EcrLogger.None,
       )
     }

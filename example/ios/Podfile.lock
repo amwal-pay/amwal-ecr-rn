@@ -1,5 +1,5 @@
 PODS:
-  - AmwalECR (0.2.1)
+  - AmwalECR (0.2.2)
   - boost (1.84.0):
     - ReactNativeDependencies
   - DoubleConversion (1.1.6):
@@ -1605,8 +1605,30 @@ PODS:
     - React-utils (= 0.87.1)
     - ReactNativeDependencies
   - ReactNativeDependencies (0.87.1)
-  - RNAmwalEcr (0.1.0):
+  - RNAmwalEcr (0.2.0):
     - AmwalECR (~> 0.2.1)
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-bridging
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
+  - RNCAsyncStorage (2.2.0):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -1634,6 +1656,7 @@ PODS:
     - React-Core-prebuilt
 
 DEPENDENCIES:
+  - AmwalECR (from `../../../AmwalECR-iOS-CocoaPods`)
   - boost (from `build/rndeps-facades/boost`)
   - DoubleConversion (from `build/rndeps-facades/DoubleConversion`)
   - fast_float (from `build/rndeps-facades/fast_float`)
@@ -1719,14 +1742,13 @@ DEPENDENCIES:
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
   - ReactNativeDependencies (from `../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
   - RNAmwalEcr (from `../..`)
+  - "RNCAsyncStorage (from `../node_modules/@react-native-async-storage/async-storage`)"
   - SocketRocket (from `build/rndeps-facades/SocketRocket`)
   - Yoga (from `build/rncore-facades/Yoga`)
 
-SPEC REPOS:
-  trunk:
-    - AmwalECR
-
 EXTERNAL SOURCES:
+  AmwalECR:
+    :path: "../../../AmwalECR-iOS-CocoaPods"
   boost:
     :path: build/rndeps-facades/boost
   DoubleConversion:
@@ -1896,13 +1918,15 @@ EXTERNAL SOURCES:
     :podspec: "../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec"
   RNAmwalEcr:
     :path: "../.."
+  RNCAsyncStorage:
+    :path: "../node_modules/@react-native-async-storage/async-storage"
   SocketRocket:
     :path: build/rndeps-facades/SocketRocket
   Yoga:
     :path: build/rncore-facades/Yoga
 
 SPEC CHECKSUMS:
-  AmwalECR: 596eadf48d0ed486e44b92ef873f592f623fdf5e
+  AmwalECR: 25f44a718937d30aafa37b023da3fae4c73b4344
   boost: 8502bfdc46e2804408af2e163049ece181009af4
   DoubleConversion: 501a575c40c0b50c89685762dd3e415e6bb26fb0
   fast_float: 7c925d1cebf8328d4018d061f49377e9f887e3b4
@@ -1986,10 +2010,11 @@ SPEC CHECKSUMS:
   ReactCodegen: 13d2ebfe2d8f1200052509b4fc4abf7a6825a7fc
   ReactCommon: 749169e12aa3461a3df3656a00e48dbe0456b2d6
   ReactNativeDependencies: 94c922c39e0e6150ee9ad05e2ca1946e0ef55783
-  RNAmwalEcr: 598b7c0a91d9a8e99a66ffd3c7c57becc1ca1792
+  RNAmwalEcr: f71a98688e23ca0ecc6443656b723eccd27922be
+  RNCAsyncStorage: 2f5e3ddbfb3d3168345311b25fb3c470edf36d9d
   SocketRocket: 37aec555668fb852ec12e3c0de59a86ca58f0871
   Yoga: d1c536142c5ff8ec8cd856ab2a7c227a1d875c8e
 
-PODFILE CHECKSUM: b52e079854f0a7bed258c3ed50ac7266066679dd
+PODFILE CHECKSUM: 54e575c3d11bbd95fbe7828923e789b9190c6b14
 
-COCOAPODS: 1.16.2
+COCOAPODS: 1.15.2

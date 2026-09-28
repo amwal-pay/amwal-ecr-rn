@@ -8,6 +8,8 @@ jest.mock('../native', () => ({
     refund: jest.fn(),
     inquire: jest.fn(),
     inquireByReference: jest.fn(),
+    signOn: jest.fn(),
+    closeReceipt: jest.fn(),
     receipt: jest.fn(),
     cancel: jest.fn(),
   },
@@ -71,6 +73,12 @@ describe('EcrTerminal', () => {
     });
     mockNativeEcr.isReachable.mockResolvedValue(true);
     mockNativeEcr.cancel.mockResolvedValue(true);
+    mockNativeEcr.signOn.mockResolvedValue({
+      outcome: 'available',
+      merchantReferenceId: 'CHECK-1',
+      capabilities: { available: true, ecrMode: 2, permitted: [] },
+      raw: '{}',
+    });
   });
 
   test('sends decimal strings and caller references unchanged', async () => {
@@ -274,6 +282,25 @@ describe('EcrTerminal', () => {
           config: { merchantId: '13593' },
         })
     ).toThrow('config.terminalId is required');
+  });
+
+  test('USB cable and app to app do not need an address', async () => {
+    const usb = new EcrTerminal({
+      transport: 'usbCable',
+      serialNumber: 'P653200085189',
+      config: { secureHashKey: SECURE_HASH_KEY_ECR_WIFI },
+    });
+    const onDevice = new EcrTerminal({
+      transport: 'appToApp',
+      serialNumber: 'P653200085189',
+      config: { secureHashKey: SECURE_HASH_KEY_ECR_WIFI },
+    });
+    expect(usb.host).toBe('');
+    expect(onDevice.host).toBe('');
+    await usb.signOn({ merchantReferenceId: 'CHECK-1' });
+    expect(mockNativeEcr.signOn).toHaveBeenCalledWith(
+      expect.objectContaining({ transport: 'usbCable' })
+    );
   });
 
   test('still requires a host for the IP transports', () => {

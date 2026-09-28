@@ -19,6 +19,12 @@
 - (void)inquireByReference:(NSDictionary *)request
                    resolver:(RCTPromiseResolveBlock)resolve
                    rejecter:(RCTPromiseRejectBlock)reject;
+- (void)signOn:(NSDictionary *)request
+       resolver:(RCTPromiseResolveBlock)resolve
+       rejecter:(RCTPromiseRejectBlock)reject;
+- (void)closeReceipt:(NSDictionary *)request
+             resolver:(RCTPromiseResolveBlock)resolve
+             rejecter:(RCTPromiseRejectBlock)reject;
 - (void)receipt:(NSDictionary *)request
         resolver:(RCTPromiseResolveBlock)resolve
         rejecter:(RCTPromiseRejectBlock)reject;
@@ -81,6 +87,20 @@
                       reject:(RCTPromiseRejectBlock)reject
 {
   [_implementation inquireByReference:request resolver:resolve rejecter:reject];
+}
+
+- (void)signOn:(NSDictionary *)request
+       resolve:(RCTPromiseResolveBlock)resolve
+        reject:(RCTPromiseRejectBlock)reject
+{
+  [_implementation signOn:request resolver:resolve rejecter:reject];
+}
+
+- (void)closeReceipt:(NSDictionary *)request
+           resolve:(RCTPromiseResolveBlock)resolve
+            reject:(RCTPromiseRejectBlock)reject
+{
+  [_implementation closeReceipt:request resolver:resolve rejecter:reject];
 }
 
 - (void)receipt:(NSDictionary *)request

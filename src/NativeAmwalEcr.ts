@@ -19,6 +19,12 @@ export interface Spec extends TurboModule {
   inquireByReference(
     request: CodegenTypes.UnsafeObject
   ): Promise<CodegenTypes.UnsafeObject>;
+  signOn(
+    request: CodegenTypes.UnsafeObject
+  ): Promise<CodegenTypes.UnsafeObject>;
+  closeReceipt(
+    request: CodegenTypes.UnsafeObject
+  ): Promise<CodegenTypes.UnsafeObject>;
   receipt(
     request: CodegenTypes.UnsafeObject
   ): Promise<CodegenTypes.UnsafeObject>;

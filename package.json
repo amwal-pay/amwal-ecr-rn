@@ -1,6 +1,6 @@
 {
   "name": "react-native-amwal-ecr",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "React Native bridge for the Amwal ECR SDK on Android and iOS.",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

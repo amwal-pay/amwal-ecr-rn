@@ -1,4 +1,36 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+Sample till for `react-native-amwal-ecr`, laid out like the Android ECR simulator:
+
+- **ECR** opens first. The app bar’s terminals icon opens **POS terminals**.
+  Back returns to the transaction. **+** opens **Add terminal**; editing a
+  card opens **Terminal**.
+- Transaction type, amount (mills: 1234 → 1.234), sale reference, inquiry by
+  receipt or reference, then the POS terminal, its sign-on line, and the
+  active-terminal card. **Start transaction** / **Look up transaction** stays
+  disabled until that terminal’s signing key and address are complete.
+- Result dialog: approved, partial approval, declined, outcome unknown with
+  Inquire by reference, raw response, and a QR receipt after an inquiry.
+  Closing it asks a Wi-Fi or USB terminal to close its receipt.
+- POS terminals: Wi-Fi/LAN and Web Service signing cards (SIT / UAT / PROD),
+  and a card per terminal with Check, Edit, and Delete.
+
+Terminals and signing keys are saved on the device with
+`@react-native-async-storage/async-storage`, a native module: after installing
+dependencies, rebuild the app (`pod install` on iOS) rather than only reloading.
+
+Install from the repository root (the example is a workspace):
+
+```sh
+yarn   # or: node .yarn/releases/yarn-4.11.0.cjs install
+```
+
+Local native SDKs are selected in `android/gradle.properties` and
+`ios/ecr_sdk.properties`. This example defaults to the sibling
+`ECR-simulator` module and `AmwalECR-iOS-CocoaPods` checkout. On Android the
+package's own `gradle.properties` wins over this one, so build with
+`--extra-params "-PecrSdkDependency=project"` to use the local SDK. See the
+package README sections "Local native SDKs" and "Running the example".
+
+This is a [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
 # Getting Started
 
@@ -31,6 +63,9 @@ npm run android
 # OR using Yarn
 yarn android
 ```
+
+On a USB-connected phone also run `adb reverse tcp:8081 tcp:8081`, or the app
+shows "Unable to load script".
 
 ### iOS
 

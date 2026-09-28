@@ -13,6 +13,8 @@ export const nativeEcr: typeof NativeAmwalEcr = {
   refund: async () => unsupported(),
   inquire: async () => unsupported(),
   inquireByReference: async () => unsupported(),
+  signOn: async () => unsupported(),
+  closeReceipt: async () => unsupported(),
   receipt: async () => unsupported(),
   cancel: async () => unsupported(),
 };

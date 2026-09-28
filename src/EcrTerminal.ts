@@ -4,6 +4,7 @@ import {
   normalizeInquiry,
   normalizeReceipt,
   normalizeResult,
+  normalizeSignOn,
 } from './normalize';
 import type {
   EcrConfig,
@@ -16,6 +17,7 @@ import type {
   EcrReferenceOptions,
   EcrRefundOptions,
   EcrResult,
+  EcrSignOn,
   EcrTerminalOptions,
   EcrTransport,
 } from './types';
@@ -148,9 +150,38 @@ export class EcrTerminal {
       this.host = options.host?.trim() ?? '';
       requireText(this.config.merchantId, 'config.merchantId');
       requireText(this.config.terminalId, 'config.terminalId');
+    } else if (
+      this.transport === 'usbCable' ||
+      this.transport === 'appToApp' ||
+      this.transport === 'bluetooth'
+    ) {
+      this.host = options.host?.trim() ?? '';
     } else {
       this.host = requireText(options.host ?? '', 'host');
     }
+  }
+
+  /**
+   * Asks the terminal what it is. Wi-Fi on Android and iOS. USB on Android.
+   * Web Service, app to app, and Bluetooth answer with a failed sign-on and
+   * send nothing. iOS has no cable channel, so USB answers unsupported there.
+   */
+  signOn(options: EcrReferenceOptions = {}): Promise<EcrSignOn> {
+    return this.startSignOn(options).result;
+  }
+
+  startSignOn(options: EcrReferenceOptions = {}): EcrOperation<EcrSignOn> {
+    return this.startOperation(
+      'signOn',
+      {
+        merchantReferenceId: requireReference(
+          options.merchantReferenceId,
+          'merchantReferenceId'
+        ),
+        operationId: options.operationId,
+      },
+      normalizeSignOn
+    );
   }
 
   isReachable(): Promise<boolean> {
@@ -273,6 +304,26 @@ export class EcrTerminal {
     );
   }
 
+  /**
+   * Asks the terminal to leave its receipt and return to idle. Wi-Fi on
+   * Android and iOS. USB on Android. App to app and Web Service answer
+   * without sending: the receipt is already gone, or the terminal is not
+   * on this counter.
+   */
+  closeReceipt(options: EcrReferenceOptions = {}): Promise<unknown> {
+    return this.startOperation(
+      'closeReceipt',
+      {
+        merchantReferenceId: requireReference(
+          options.merchantReferenceId,
+          'merchantReferenceId'
+        ),
+        operationId: options.operationId,
+      },
+      (value) => value
+    ).result;
+  }
+
   receipt(options: EcrDatedTransactionOptions): Promise<EcrReceipt> {
     return this.startReceipt(options).result;
   }
@@ -295,7 +346,7 @@ export class EcrTerminal {
   }
 
   private get isIpTransport(): boolean {
-    return this.transport === 'ethernet' || this.transport === 'wifi';
+    return this.transport === 'wifi' || this.transport === 'ethernet';
   }
 
   private request(
@@ -326,6 +377,8 @@ export class EcrTerminal {
       | 'refund'
       | 'inquire'
       | 'inquireByReference'
+      | 'signOn'
+      | 'closeReceipt'
       | 'receipt',
     values: NativeRequest,
     normalize: (value: unknown) => T

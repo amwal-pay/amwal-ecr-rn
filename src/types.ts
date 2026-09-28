@@ -1,15 +1,21 @@
 /**
- * How the till reaches the terminal.
+ * How the till reaches the terminal. Values match TMS `ecrMode`:
+ * `usbCable` 1, `wifi` 2, `bluetooth` 3, `webService` 4, `appToApp` 5.
  *
- * `wifi` and `ethernet` open a TCP socket to the terminal's local IP.
- * `webService` drives the terminal through the Amwal payment host over REST —
- * no local network involved; it needs `merchantId`, `terminalId` and
- * `environment` in the config instead of a host. `usbCable` and `bluetooth`
- * are not handled by this library and answer with a typed `unsupported`
- * failure without sending anything.
+ * `wifi` opens a TCP socket to the terminal's local IP. `ethernet` is accepted
+ * as the same path. `webService` drives the terminal through the Amwal payment
+ * host over REST and needs `merchantId`, `terminalId` and `environment`.
+ * `usbCable` and `appToApp` are driven on Android. `bluetooth` answers with a
+ * typed `unsupported` failure without sending anything. On iOS, USB cable,
+ * app to app, and sign-on answer the same way.
  */
 export type EcrTransport =
-  'ethernet' | 'wifi' | 'bluetooth' | 'usbCable' | 'webService';
+  | 'wifi'
+  | 'ethernet'
+  | 'usbCable'
+  | 'bluetooth'
+  | 'webService'
+  | 'appToApp';
 
 /**
  * Hub deployment for Web Service ECR. URLs are resolved inside the native
@@ -35,10 +41,56 @@ export interface EcrConfig {
   environment?: EcrEnvironment;
 }
 
+export interface EcrPermittedTransaction {
+  messageType: string;
+  minAmount: string;
+  maxAmount: string;
+}
+
+/** What a sign-on learned about the terminal. */
+export interface EcrTerminalCapabilities {
+  available: boolean;
+  reason: string;
+  /** TMS ecrMode: 1 USB, 2 Wi-Fi, 3 Bluetooth, 4 Web Service. 0 when unknown. */
+  ecrMode: number;
+  terminalName: string;
+  currencyCode: string;
+  minorUnitDigits: number;
+  eReceipt: boolean;
+  physicalReceipt: boolean;
+  permitted: EcrPermittedTransaction[];
+}
+
+export interface EcrSignOnAvailable {
+  outcome: 'available';
+  merchantReferenceId: string;
+  capabilities: EcrTerminalCapabilities;
+  raw: string;
+}
+
+export interface EcrSignOnUnavailable {
+  outcome: 'unavailable';
+  merchantReferenceId: string;
+  reason: string;
+  capabilities: EcrTerminalCapabilities;
+  raw: string;
+}
+
+export interface EcrSignOnFailed {
+  outcome: 'failed';
+  merchantReferenceId: string;
+  failure: EcrFailure;
+}
+
+export type EcrSignOn =
+  | EcrSignOnAvailable
+  | EcrSignOnUnavailable
+  | EcrSignOnFailed;
+
 export interface EcrTerminalOptions {
   /**
-   * The terminal's IP address. Required for `wifi` and `ethernet`; ignored by
-   * `webService`, which addresses the terminal through the payment host.
+   * The terminal's IP address. Required for `wifi` and `ethernet`. Unused by
+   * `webService`, `usbCable`, and `appToApp`.
    */
   host?: string;
   serialNumber?: string;
@@ -86,6 +138,8 @@ export interface EcrDeclined {
   nextStep: EcrNextStep;
   raw: string;
   outcomeIsUnknown: boolean;
+  /** Present when the terminal refused because its profile changed. */
+  capabilities?: EcrTerminalCapabilities;
 }
 
 export interface EcrFailed {

@@ -1,6 +1,27 @@
-pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
-plugins { id("com.facebook.react.settings") }
+pluginManagement {
+  includeBuild("../node_modules/@react-native/gradle-plugin")
+  repositories {
+    google()
+    mavenCentral()
+    gradlePluginPortal()
+  }
+}
+plugins {
+  id("com.facebook.react.settings")
+}
 extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
 rootProject.name = 'amwalecr.example'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
+
+// Local ecr-sdk, only when example/android/gradle.properties says project.
+def ecrSdkProps = new Properties()
+def ecrPropsFile = file("gradle.properties")
+if (ecrPropsFile.exists()) {
+  ecrPropsFile.withInputStream { ecrSdkProps.load(it) }
+}
+if (ecrSdkProps.getProperty("ecrSdkDependency", "maven") == "project") {
+  def ecrSdkRoot = ecrSdkProps.getProperty("ecrSdkRoot", "../../../ECR-simulator")
+  include(":ecr-sdk")
+  project(":ecr-sdk").projectDir = file("${ecrSdkRoot}/ecr-sdk")
+}
