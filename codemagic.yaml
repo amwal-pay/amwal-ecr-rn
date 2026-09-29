@@ -157,9 +157,10 @@ workflows:
       - name: The native providers this bridge pins are live
         script: |
           set -euo pipefail
-          # android/build.gradle: implementation "com.amwal-pay:ecr-sdk:X.Y.Z"
-          sdk="$(sed -nE 's/.*"com\.amwal-pay:ecr-sdk:([0-9.]+)".*/\1/p' android/build.gradle | head -1)"
-          [[ -n "$sdk" ]] || { echo "Could not read the ecr-sdk version from android/build.gradle" >&2; exit 1; }
+          # android/gradle.properties: ecrSdkVersion=X.Y.Z
+          # (build.gradle interpolates com.amwal-pay:ecr-sdk:${ecrSdkVersion})
+          sdk="$(sed -nE 's/^[[:space:]]*ecrSdkVersion[[:space:]]*=[[:space:]]*([0-9.]+).*/\1/p' android/gradle.properties | head -1)"
+          [[ -n "$sdk" ]] || { echo "Could not read ecrSdkVersion from android/gradle.properties" >&2; exit 1; }
           curl -fsSI "https://repo1.maven.org/maven2/com/amwal-pay/ecr-sdk/${sdk}/ecr-sdk-${sdk}.pom" >/dev/null \
             && echo "com.amwal-pay:ecr-sdk:${sdk} is on Maven Central" \
             || { echo "com.amwal-pay:ecr-sdk:${sdk} is not on Maven Central; release the Android provider first." >&2; exit 1; }
