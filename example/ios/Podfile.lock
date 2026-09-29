@@ -1656,7 +1656,6 @@ PODS:
     - React-Core-prebuilt
 
 DEPENDENCIES:
-  - AmwalECR (from `../../../AmwalECR-iOS-CocoaPods`)
   - boost (from `build/rndeps-facades/boost`)
   - DoubleConversion (from `build/rndeps-facades/DoubleConversion`)
   - fast_float (from `build/rndeps-facades/fast_float`)
@@ -1746,9 +1745,11 @@ DEPENDENCIES:
   - SocketRocket (from `build/rndeps-facades/SocketRocket`)
   - Yoga (from `build/rncore-facades/Yoga`)
 
+SPEC REPOS:
+  trunk:
+    - AmwalECR
+
 EXTERNAL SOURCES:
-  AmwalECR:
-    :path: "../../../AmwalECR-iOS-CocoaPods"
   boost:
     :path: build/rndeps-facades/boost
   DoubleConversion:
@@ -2017,4 +2018,4 @@ SPEC CHECKSUMS:
 
 PODFILE CHECKSUM: 54e575c3d11bbd95fbe7828923e789b9190c6b14
 
-COCOAPODS: 1.15.2
+COCOAPODS: 1.16.2

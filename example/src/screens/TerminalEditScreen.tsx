@@ -1,6 +1,12 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { FormScroll, OutlinedField, PrimaryButton, RadioRow, Screen } from '../chrome';
+import { StyleSheet, Text } from 'react-native';
+import {
+  FormScroll,
+  OutlinedField,
+  PrimaryButton,
+  RadioRow,
+  Screen,
+} from '../chrome';
 import {
   MODES,
   hasTerminalErrors,
@@ -57,7 +63,9 @@ export function TerminalEditScreen({
         {MODES.map((mode) => (
           <RadioRow
             key={mode.id}
-            caption={mode.supported ? undefined : 'Not available in this simulator'}
+            caption={
+              mode.supported ? undefined : 'Not available in this simulator'
+            }
             label={mode.label}
             selected={draft.transport === mode.id}
             onPress={() => patch({ transport: mode.id })}
@@ -65,8 +73,8 @@ export function TerminalEditScreen({
         ))}
         {draft.transport === 'usbCable' ? (
           <Text style={styles.hint}>
-            Connect the till to the terminal with a USB cable. There is no address to enter - the
-            cable is found when it is plugged in.
+            Connect the till to the terminal with a USB cable. There is no
+            address to enter - the cable is found when it is plugged in.
           </Text>
         ) : null}
         {draft.transport === 'wifi' ? (
@@ -76,18 +84,22 @@ export function TerminalEditScreen({
               keyboardType="decimal-pad"
               label="IP address"
               value={draft.ipAddress}
-              onChangeText={(ipAddress) => patch({ ipAddress: ipAddress.replace(/[^\d.]/g, '') })}
+              onChangeText={(ipAddress) =>
+                patch({ ipAddress: ipAddress.replace(/[^\d.]/g, '') })
+              }
             />
             <Text style={styles.hint}>
-              Use the IP shown on the POS terminal under the card logos. Default port is 9100. Same
-              phone: try 127.0.0.1.
+              Use the IP shown on the POS terminal under the card logos. Default
+              port is 9100. Same phone: try 127.0.0.1.
             </Text>
             <OutlinedField
               error={errors.port}
               keyboardType="number-pad"
               label="Port"
               value={draft.port ? String(draft.port) : ''}
-              onChangeText={(port) => patch({ port: Number(port.replace(/\D/g, '')) })}
+              onChangeText={(port) =>
+                patch({ port: Number(port.replace(/\D/g, '')) })
+              }
             />
           </>
         ) : null}
@@ -98,25 +110,31 @@ export function TerminalEditScreen({
               keyboardType="number-pad"
               label="Merchant ID"
               value={draft.merchantId}
-              onChangeText={(merchantId) => patch({ merchantId: merchantId.replace(/\D/g, '') })}
+              onChangeText={(merchantId) =>
+                patch({ merchantId: merchantId.replace(/\D/g, '') })
+              }
             />
             <OutlinedField
               error={errors.terminalId}
               keyboardType="number-pad"
               label="Terminal ID"
               value={draft.terminalId}
-              onChangeText={(terminalId) => patch({ terminalId: terminalId.replace(/\D/g, '') })}
+              onChangeText={(terminalId) =>
+                patch({ terminalId: terminalId.replace(/\D/g, '') })
+              }
             />
           </>
         ) : null}
         {draft.transport === 'bluetooth' ? (
-          <Text style={styles.hint}>Bluetooth ECR cannot be exercised from this simulator.</Text>
+          <Text style={styles.hint}>
+            Bluetooth ECR cannot be exercised from this simulator.
+          </Text>
         ) : null}
         {draft.transport === 'appToApp' ? (
           <Text style={styles.hint}>
-            The terminal is this device. There is no address: the transaction is handed to the
-            Amwal payment app installed here, and the serial number still has to be the one that
-            app drives.
+            The terminal is this device. There is no address: the transaction is
+            handed to the Amwal payment app installed here, and the serial
+            number still has to be the one that app drives.
           </Text>
         ) : null}
         <PrimaryButton

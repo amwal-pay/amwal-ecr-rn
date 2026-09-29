@@ -23,10 +23,38 @@ export const MENU: {
   requiresStan: boolean;
   requiresDate: boolean;
 }[] = [
-  { id: 'sale', label: 'Sale', messageType: 'SALE', requiresAmount: true, requiresStan: false, requiresDate: false },
-  { id: 'void', label: 'Void', messageType: 'VOID', requiresAmount: false, requiresStan: true, requiresDate: false },
-  { id: 'refund', label: 'Refund', messageType: 'REFUND', requiresAmount: true, requiresStan: true, requiresDate: true },
-  { id: 'inquiry', label: 'Inquiry', messageType: 'INQUIRY', requiresAmount: false, requiresStan: true, requiresDate: true },
+  {
+    id: 'sale',
+    label: 'Sale',
+    messageType: 'SALE',
+    requiresAmount: true,
+    requiresStan: false,
+    requiresDate: false,
+  },
+  {
+    id: 'void',
+    label: 'Void',
+    messageType: 'VOID',
+    requiresAmount: false,
+    requiresStan: true,
+    requiresDate: false,
+  },
+  {
+    id: 'refund',
+    label: 'Refund',
+    messageType: 'REFUND',
+    requiresAmount: true,
+    requiresStan: true,
+    requiresDate: true,
+  },
+  {
+    id: 'inquiry',
+    label: 'Inquiry',
+    messageType: 'INQUIRY',
+    requiresAmount: false,
+    requiresStan: true,
+    requiresDate: true,
+  },
 ];
 
 export interface SavedTerminal {
@@ -123,7 +151,9 @@ export function reportedTransport(ecrMode: number): string | null {
 }
 
 export function permittedLabel(messageType: string): string {
-  return MENU.find((item) => item.messageType === messageType)?.label ?? messageType;
+  return (
+    MENU.find((item) => item.messageType === messageType)?.label ?? messageType
+  );
 }
 
 export interface TerminalPlan {
@@ -153,23 +183,27 @@ export function terminalPlan(
     );
   }
   if (terminal.transport === 'wifi' || terminal.transport === 'ethernet') {
-    if (!terminal.ipAddress.trim()) issues.push('IP address is required for LAN ECR');
+    if (!terminal.ipAddress.trim())
+      issues.push('IP address is required for LAN ECR');
     if (terminal.port < 1 || terminal.port > 65535) {
       issues.push('Port must be between 1 and 65535 (default 9100)');
     }
   }
   if (terminal.transport === 'webService') {
-    if (!terminal.merchantId.trim()) issues.push('Merchant ID is required for Web Service');
+    if (!terminal.merchantId.trim())
+      issues.push('Merchant ID is required for Web Service');
     else if (!/^\d+$/.test(terminal.merchantId.trim())) {
       issues.push('Merchant ID must be numeric');
     }
-    if (!terminal.terminalId.trim()) issues.push('Terminal ID is required for Web Service');
+    if (!terminal.terminalId.trim())
+      issues.push('Terminal ID is required for Web Service');
     else if (!/^\d+$/.test(terminal.terminalId.trim())) {
       issues.push('Terminal ID must be numeric');
     }
   }
   const configured = isSecret(key);
-  if (!configured) issues.push(`${signingKeyLabel(terminal.transport)} is not configured`);
+  if (!configured)
+    issues.push(`${signingKeyLabel(terminal.transport)} is not configured`);
 
   const transportLabel =
     terminal.transport === 'webService'
@@ -200,7 +234,20 @@ export function terminalPlan(
   };
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
 
 export function formatDisplayDate(date: Date): string {
   const day = String(date.getDate()).padStart(2, '0');
@@ -291,7 +338,8 @@ export function validateTerminal(
 ): TerminalErrors {
   const errors: TerminalErrors = {};
   if (!draft.name.trim()) errors.name = 'Enter a terminal name';
-  if (!draft.serialNumber.trim()) errors.serial = 'Enter the terminal serial number';
+  if (!draft.serialNumber.trim())
+    errors.serial = 'Enter the terminal serial number';
   if (
     others.some(
       (terminal) =>
@@ -299,7 +347,8 @@ export function validateTerminal(
         draft.serialNumber.trim().toLowerCase()
     )
   ) {
-    errors.duplicate = 'A terminal with this serial number is already registered';
+    errors.duplicate =
+      'A terminal with this serial number is already registered';
   }
   if (draft.transport === 'wifi' || draft.transport === 'ethernet') {
     if (!draft.ipAddress.trim()) errors.ip = 'Enter the terminal IP address';
@@ -312,7 +361,8 @@ export function validateTerminal(
     }
   }
   if (draft.transport === 'webService') {
-    if (!draft.terminalId.trim()) errors.terminalId = 'Enter the backend terminal ID';
+    if (!draft.terminalId.trim())
+      errors.terminalId = 'Enter the backend terminal ID';
     if (!draft.merchantId.trim()) errors.merchantId = 'Enter the merchant ID';
   }
   return errors;
@@ -325,14 +375,18 @@ export function hasTerminalErrors(errors: TerminalErrors): boolean {
 export function merchantReferenceError(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (trimmed.length > 32) return 'A merchant reference is at most 32 characters';
+  if (trimmed.length > 32)
+    return 'A merchant reference is at most 32 characters';
   if (/[\s&=]/.test(trimmed) || /[^\x21-\x7E]/.test(trimmed)) {
     return "Use printable ASCII without spaces, '&' or '='";
   }
   return null;
 }
 
-export function unreachableMessage(terminal: SavedTerminal, detail?: string): string {
+export function unreachableMessage(
+  terminal: SavedTerminal,
+  detail?: string
+): string {
   const head = detail
     ? `${connectionSummary(terminal)} is not reachable\n(${detail})`
     : `${connectionSummary(terminal)} is not reachable`;

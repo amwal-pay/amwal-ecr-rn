@@ -50,7 +50,12 @@ export function TerminalsScreen({
 
   return (
     <Screen fab={onAdd} onBack={onBack} title="POS terminals">
-      <FormScroll contentContainerStyle={[styles.pad, terminals.length === 0 && styles.padEmpty]}>
+      <FormScroll
+        contentContainerStyle={[
+          styles.pad,
+          terminals.length === 0 && styles.padEmpty,
+        ]}
+      >
         {terminals.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Text style={styles.empty}>
@@ -102,18 +107,22 @@ function SettingsCards({
       <SurfaceCard>
         <Text style={styles.cardTitle}>Wi‑Fi / LAN settings</Text>
         <Text style={styles.caption}>
-          Signing key for Wi‑Fi, USB cable, and Bluetooth ECR (sorted key=value HMAC).
+          Signing key for Wi‑Fi, USB cable, and Bluetooth ECR (sorted key=value
+          HMAC).
         </Text>
         <HashKeyField
           label="Wi-Fi/LAN secure hash key"
           value={settings.wifiSecureHashKey}
-          onChangeText={(wifiSecureHashKey) => onSettings({ ...settings, wifiSecureHashKey })}
+          onChangeText={(wifiSecureHashKey) =>
+            onSettings({ ...settings, wifiSecureHashKey })
+          }
         />
       </SurfaceCard>
       <SurfaceCard>
         <Text style={styles.cardTitle}>Web Service settings</Text>
         <Text style={styles.caption}>
-          Target environment and signing key for Web Service ECR (JSON body HMAC).
+          Target environment and signing key for Web Service ECR (JSON body
+          HMAC).
         </Text>
         {ENVIRONMENTS.map((environment) => (
           <RadioRow
@@ -149,12 +158,19 @@ function HashKeyField({
   return (
     <OutlinedField
       autoCapitalize="none"
-      error={invalid ? 'Must be an even-length hex string of at least 16 characters' : null}
+      error={
+        invalid
+          ? 'Must be an even-length hex string of at least 16 characters'
+          : null
+      }
       keyboardType="ascii-capable"
       label={label}
       secure={!shown}
       trailing={
-        <TextAction label={shown ? 'Hide' : 'Show'} onPress={() => setShown((current) => !current)} />
+        <TextAction
+          label={shown ? 'Hide' : 'Show'}
+          onPress={() => setShown((current) => !current)}
+        />
       }
       value={value}
       onChangeText={(next) => onChangeText(next.replace(/[^0-9a-fA-F]/g, ''))}
@@ -182,14 +198,18 @@ function TerminalCard({
   return (
     <SurfaceCard>
       <View style={styles.nameRow}>
-        <SignOnDot signOn={terminal.transport === 'appToApp' ? undefined : signOn} />
+        <SignOnDot
+          signOn={terminal.transport === 'appToApp' ? undefined : signOn}
+        />
         <Text style={styles.name}>{terminal.name}</Text>
       </View>
       <Text style={styles.mode}>
         {modeOf(terminal.transport).label}
         {reported ? ` · terminal reports ${reported}` : ''}
       </Text>
-      {terminal.transport === 'appToApp' ? null : <SignOnSummary signOn={signOn} />}
+      {terminal.transport === 'appToApp' ? null : (
+        <SignOnSummary signOn={signOn} />
+      )}
       <Text style={styles.mono}>S/N {terminal.serialNumber}</Text>
       <Text style={styles.mono}>{connectionSummary(terminal)}</Text>
       <View style={styles.actions}>
@@ -211,7 +231,17 @@ const styles = StyleSheet.create({
   caption: { color: colors.onSurfaceVariant, fontSize: 12, marginBottom: 8 },
   nameRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
   name: { color: colors.onSurface, fontSize: 16, fontWeight: '600' },
-  mode: { color: colors.primary, fontSize: 12, fontWeight: '600', marginTop: 4 },
-  mono: { color: colors.onSurface, fontFamily: 'monospace', fontSize: 12, marginTop: 2 },
+  mode: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  mono: {
+    color: colors.onSurface,
+    fontFamily: 'monospace',
+    fontSize: 12,
+    marginTop: 2,
+  },
   actions: { flexDirection: 'row', justifyContent: 'flex-end' },
 });

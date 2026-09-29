@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
-import { EcrTerminal, type EcrTerminalCapabilities } from 'react-native-amwal-ecr';
+import {
+  ActivityIndicator,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import {
+  EcrTerminal,
+  type EcrTerminalCapabilities,
+} from 'react-native-amwal-ecr';
 import {
   DateField,
   Dropdown,
@@ -48,7 +57,9 @@ export function TransactionScreen({
   open: (terminal: SavedTerminal) => EcrTerminal;
   onProfile: (serial: string, capabilities: EcrTerminalCapabilities) => void;
 }) {
-  const terminal = terminals.find((item) => item.serialNumber === selectedSerial);
+  const terminal = terminals.find(
+    (item) => item.serialNumber === selectedSerial
+  );
   const permitted =
     signOn?.kind === 'ready' || signOn?.kind === 'notReady'
       ? signOn.capabilities?.permitted.map((item) => item.messageType)
@@ -57,7 +68,10 @@ export function TransactionScreen({
     (item) => !permitted?.length || permitted.includes(item.messageType)
   );
   const [operation, setOperation] = useState<OperationId>('sale');
-  const active = operations.find((item) => item.id === operation) ?? operations[0] ?? MENU[0]!;
+  const active =
+    operations.find((item) => item.id === operation) ??
+    operations[0] ??
+    MENU[0]!;
   const [digits, setDigits] = useState('');
   const [merchantReference, setMerchantReference] = useState('');
   const [lookUpByReference, setLookUpByReference] = useState(false);
@@ -96,8 +110,10 @@ export function TransactionScreen({
     setErrors({});
   };
 
-  const showReceipt = active.requiresStan && !(active.id === 'inquiry' && lookUpByReference);
-  const showDate = active.requiresDate && !(active.id === 'inquiry' && lookUpByReference);
+  const showReceipt =
+    active.requiresStan && !(active.id === 'inquiry' && lookUpByReference);
+  const showDate =
+    active.requiresDate && !(active.id === 'inquiry' && lookUpByReference);
   const plan = terminal ? terminalPlan(terminal, settings) : null;
   const busy = phase != null;
 
@@ -105,9 +121,12 @@ export function TransactionScreen({
     if (!terminal || busy) return;
     const next: FieldErrors = {
       amount: amountError(digits, active.requiresAmount),
-      merchantReference: active.id === 'sale' ? merchantReferenceError(merchantReference) : null,
+      merchantReference:
+        active.id === 'sale' ? merchantReferenceError(merchantReference) : null,
       originalReference:
-        active.id === 'inquiry' && lookUpByReference && !originalReference.trim()
+        active.id === 'inquiry' &&
+        lookUpByReference &&
+        !originalReference.trim()
           ? 'Enter the reference the transaction was sent with'
           : null,
       receiptNumber:
@@ -124,24 +143,35 @@ export function TransactionScreen({
         terminal.transport === 'wifi' ||
         terminal.transport === 'ethernet' ||
         (Platform.OS === 'android' &&
-          (terminal.transport === 'usbCable' || terminal.transport === 'appToApp'));
+          (terminal.transport === 'usbCable' ||
+            terminal.transport === 'appToApp'));
       if (probes) {
         setPhase('checking');
         const reachable = await session.isReachable();
         if (!reachable) {
-          setDialog({ kind: 'failure', message: unreachableMessage(terminal), terminal });
+          setDialog({
+            kind: 'failure',
+            message: unreachableMessage(terminal),
+            terminal,
+          });
           return;
         }
       }
       setPhase('waiting');
-      if ((signOn == null || signOn.kind === 'noAnswer') && terminal.transport !== 'appToApp') {
+      if (
+        (signOn == null || signOn.kind === 'noAnswer') &&
+        terminal.transport !== 'appToApp'
+      ) {
         onSelect(terminal);
       }
 
       if (active.id === 'inquiry' && lookUpByReference) {
-        const inquiry = await session.inquireByReference(originalReference.trim(), {
-          merchantReferenceId: originalReference.trim(),
-        });
+        const inquiry = await session.inquireByReference(
+          originalReference.trim(),
+          {
+            merchantReferenceId: originalReference.trim(),
+          }
+        );
         setDialog({
           kind: 'inquiry',
           inquiry,
@@ -187,7 +217,10 @@ export function TransactionScreen({
       ) {
         onProfile(terminal.serialNumber, result.capabilities);
       }
-      if (result.outcome === 'failed' && result.recovered?.outcome === 'found') {
+      if (
+        result.outcome === 'failed' &&
+        result.recovered?.outcome === 'found'
+      ) {
         setDialog({
           kind: 'inquiry',
           inquiry: result.recovered,
@@ -209,7 +242,11 @@ export function TransactionScreen({
         return;
       }
       if (result.outcome === 'failed') {
-        setDialog({ kind: 'failure', message: result.failure.message, terminal });
+        setDialog({
+          kind: 'failure',
+          message: result.failure.message,
+          terminal,
+        });
         return;
       }
       setDialog({ kind: 'result', result, operation: active.id, terminal });
@@ -238,7 +275,9 @@ export function TransactionScreen({
     // this dialog is that moment. App to app has already closed it: the
     // answer is held until the operator leaves the receipt.
     if (!terminal || terminal.transport === 'appToApp') return;
-    open(terminal).closeReceipt().catch(() => undefined);
+    open(terminal)
+      .closeReceipt()
+      .catch(() => undefined);
   };
 
   return (
@@ -312,11 +351,17 @@ export function TransactionScreen({
             keyboardType="number-pad"
             label="Receipt number"
             value={receiptNumber}
-            onChangeText={(value) => setReceiptNumber(value.replace(/\D/g, '').slice(0, 6))}
+            onChangeText={(value) =>
+              setReceiptNumber(value.replace(/\D/g, '').slice(0, 6))
+            }
           />
         ) : null}
         {showDate ? (
-          <DateField enabled={!busy} value={originalDate} onChange={setOriginalDate} />
+          <DateField
+            enabled={!busy}
+            value={originalDate}
+            onChange={setOriginalDate}
+          />
         ) : null}
         {terminals.length === 0 ? (
           <Text style={styles.empty}>
@@ -332,13 +377,21 @@ export function TransactionScreen({
               selected={terminal}
               onSelected={onSelect}
             />
-            <TerminalStatus signOn={terminal?.transport === 'appToApp' ? undefined : signOn} />
-            {terminal && plan ? <ConfigCard plan={plan} terminal={terminal} /> : null}
+            <TerminalStatus
+              signOn={terminal?.transport === 'appToApp' ? undefined : signOn}
+            />
+            {terminal && plan ? (
+              <ConfigCard plan={plan} terminal={terminal} />
+            ) : null}
           </>
         )}
         <PrimaryButton
           enabled={!busy && plan?.ready === true}
-          label={active.id === 'inquiry' ? 'Look up transaction' : 'Start transaction'}
+          label={
+            active.id === 'inquiry'
+              ? 'Look up transaction'
+              : 'Start transaction'
+          }
           onPress={() => {
             send().catch(() => undefined);
           }}
@@ -347,7 +400,9 @@ export function TransactionScreen({
           <View style={styles.waiting}>
             <ActivityIndicator color={colors.primary} />
             <Text style={styles.waitingText}>
-              {phase === 'checking' ? 'Checking the terminal…' : 'Waiting for the POS terminal…'}
+              {phase === 'checking'
+                ? 'Checking the terminal…'
+                : 'Waiting for the POS terminal…'}
             </Text>
           </View>
         ) : null}
@@ -373,7 +428,10 @@ export function TransactionScreen({
           if (dialog?.kind !== 'inquiry') return;
           const current = dialog;
           setDialog({ ...current, fetching: true });
-          const found = current.inquiry.outcome === 'found' ? current.inquiry.transaction : null;
+          const found =
+            current.inquiry.outcome === 'found'
+              ? current.inquiry.transaction
+              : null;
           const number = found?.stan || current.receiptNumber;
           const date = found?.transactionTime
             ? found.transactionTime.replace(/\D/g, '').slice(0, 8)
@@ -394,7 +452,8 @@ export function TransactionScreen({
                 merchantReferenceId: '',
                 failure: {
                   kind: 'malformed',
-                  message: error instanceof Error ? error.message : String(error),
+                  message:
+                    error instanceof Error ? error.message : String(error),
                   outcomeIsUnknown: true,
                 },
               },
@@ -414,7 +473,12 @@ function ConfigCard({
   plan: ReturnType<typeof terminalPlan>;
 }) {
   return (
-    <View style={[styles.config, plan.ready ? styles.configReady : styles.configMissing]}>
+    <View
+      style={[
+        styles.config,
+        plan.ready ? styles.configReady : styles.configMissing,
+      ]}
+    >
       <Text style={styles.configTitle}>Active terminal config</Text>
       <ConfigLine label="ECR mode" value={modeOf(terminal.transport).label} />
       <ConfigLine label="Transport" value={plan.transportLabel} />

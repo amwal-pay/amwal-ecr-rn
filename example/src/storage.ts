@@ -1,9 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  EMPTY_SETTINGS,
-  type AppSettings,
-  type SavedTerminal,
-} from './model';
+import { EMPTY_SETTINGS, type AppSettings, type SavedTerminal } from './model';
 
 const KEY = '@amwal-ecr-example/till';
 

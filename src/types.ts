@@ -10,12 +10,7 @@
  * app to app, and sign-on answer the same way.
  */
 export type EcrTransport =
-  | 'wifi'
-  | 'ethernet'
-  | 'usbCable'
-  | 'bluetooth'
-  | 'webService'
-  | 'appToApp';
+  'wifi' | 'ethernet' | 'usbCable' | 'bluetooth' | 'webService' | 'appToApp';
 
 /**
  * Hub deployment for Web Service ECR. URLs are resolved inside the native
@@ -83,9 +78,7 @@ export interface EcrSignOnFailed {
 }
 
 export type EcrSignOn =
-  | EcrSignOnAvailable
-  | EcrSignOnUnavailable
-  | EcrSignOnFailed;
+  EcrSignOnAvailable | EcrSignOnUnavailable | EcrSignOnFailed;
 
 export interface EcrTerminalOptions {
   /**

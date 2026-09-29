@@ -65,7 +65,9 @@ export function normalizeSignOn(value: unknown): EcrSignOn {
     case 'failed':
       return { ...raw, failure: failure(raw.failure) } as EcrSignOn;
     default:
-      throw new Error('The native ECR host returned an unknown sign-on outcome.');
+      throw new Error(
+        'The native ECR host returned an unknown sign-on outcome.'
+      );
   }
 }
 

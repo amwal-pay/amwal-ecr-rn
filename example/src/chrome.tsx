@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -13,14 +19,16 @@ import {
   TextInput,
   View,
   type KeyboardTypeOptions,
+  type ScrollViewInstance,
   type StyleProp,
+  type ViewInstance,
   type ViewStyle,
 } from 'react-native';
 import { formatDisplayDate, permittedLabel, reportedTransport } from './model';
 import type { SignOnView } from './signOn';
 import { colors } from './theme';
 
-let revealField: ((node: View) => void) | null = null;
+let revealField: ((node: ViewInstance) => void) | null = null;
 
 /** Scrolls the focused field above the keyboard. Edge-to-edge draws over it otherwise. */
 export function FormScroll({
@@ -30,13 +38,13 @@ export function FormScroll({
   children: ReactNode;
   contentContainerStyle?: StyleProp<ViewStyle>;
 }) {
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const scrollY = useRef(0);
   const keyboardHeight = useRef(0);
-  const focused = useRef<View | null>(null);
+  const focused = useRef<ViewInstance | null>(null);
   const [keyboard, setKeyboard] = useState(0);
 
-  const reveal = (node: View) => {
+  const reveal = (node: ViewInstance) => {
     focused.current = node;
     alignField(scrollRef, scrollY, keyboardHeight, node);
     setTimeout(() => alignField(scrollRef, scrollY, keyboardHeight, node), 300);
@@ -50,8 +58,10 @@ export function FormScroll({
   });
 
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const show = Keyboard.addListener(showEvent, (event) => {
       const windowHeight = Dimensions.get('window').height;
       const height = Math.max(
@@ -62,7 +72,10 @@ export function FormScroll({
       setKeyboard(height);
       const node = focused.current;
       if (!node) return;
-      setTimeout(() => alignField(scrollRef, scrollY, keyboardHeight, node), 50);
+      setTimeout(
+        () => alignField(scrollRef, scrollY, keyboardHeight, node),
+        50
+      );
     });
     const hide = Keyboard.addListener(hideEvent, () => {
       keyboardHeight.current = 0;
@@ -81,7 +94,10 @@ export function FormScroll({
     <View style={styles.formScroll}>
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={[contentContainerStyle, { paddingBottom: basePad + keyboard }]}
+        contentContainerStyle={[
+          contentContainerStyle,
+          { paddingBottom: basePad + keyboard },
+        ]}
         keyboardShouldPersistTaps="handled"
         removeClippedSubviews={false}
         scrollEventThrottle={16}
@@ -97,10 +113,10 @@ export function FormScroll({
 }
 
 function alignField(
-  scrollRef: RefObject<ScrollView | null>,
+  scrollRef: RefObject<ScrollViewInstance | null>,
   scrollY: RefObject<number>,
   keyboardHeight: RefObject<number>,
-  node: View
+  node: ViewInstance
 ) {
   const keyboard = keyboardHeight.current ?? 0;
   if (keyboard <= 0) return;
@@ -131,15 +147,23 @@ export function Screen({
 }) {
   return (
     <View style={styles.screen}>
-      <StatusBar backgroundColor={colors.primary} barStyle="light-content" />
+      <StatusBar barStyle="light-content" />
       <View style={[styles.barSafe, { paddingTop: statusInset() }]}>
         <View style={styles.bar}>
           {onBack ? (
-            <Pressable accessibilityLabel="Back" hitSlop={8} onPress={onBack} style={styles.barButton}>
+            <Pressable
+              accessibilityLabel="Back"
+              hitSlop={8}
+              onPress={onBack}
+              style={styles.barButton}
+            >
               <Text style={styles.barIcon}>‹</Text>
             </Pressable>
           ) : null}
-          <Text numberOfLines={1} style={[styles.barTitle, !onBack && styles.barTitleInset]}>
+          <Text
+            numberOfLines={1}
+            style={[styles.barTitle, !onBack && styles.barTitleInset]}
+          >
             {title}
           </Text>
           {onTerminals ? (
@@ -158,7 +182,11 @@ export function Screen({
       </View>
       <View style={styles.content}>{children}</View>
       {fab ? (
-        <Pressable accessibilityLabel="Add terminal" onPress={fab} style={styles.fab}>
+        <Pressable
+          accessibilityLabel="Add terminal"
+          onPress={fab}
+          style={styles.fab}
+        >
           <Text style={styles.fabIcon}>+</Text>
         </Pressable>
       ) : null}
@@ -211,16 +239,28 @@ export function OutlinedField({
   caretAtEnd?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
-  const fieldRef = useRef<View>(null);
+  const fieldRef = useRef<ViewInstance>(null);
   const floated = focused || value.length > 0;
-  const border = error ? colors.error : focused ? colors.primary : colors.outline;
-  const labelColor = error ? colors.error : focused ? colors.primary : colors.onSurfaceVariant;
+  const border = error
+    ? colors.error
+    : focused
+      ? colors.primary
+      : colors.outline;
+  const labelColor = error
+    ? colors.error
+    : focused
+      ? colors.primary
+      : colors.onSurfaceVariant;
 
   return (
     <View ref={fieldRef}>
       <View
         pointerEvents={editable ? 'auto' : 'none'}
-        style={[styles.field, { borderColor: border }, !editable && styles.fieldDisabled]}
+        style={[
+          styles.field,
+          { borderColor: border },
+          !editable && styles.fieldDisabled,
+        ]}
       >
         <Text
           style={[
@@ -245,8 +285,14 @@ export function OutlinedField({
             if (node) revealField?.(node);
           }}
           secureTextEntry={secure}
-          {...(caretAtEnd ? { selection: { start: value.length, end: value.length } } : {})}
-          style={[styles.fieldInput, floated && styles.fieldInputFloated, trailing && styles.fieldInputTrailing]}
+          {...(caretAtEnd
+            ? { selection: { start: value.length, end: value.length } }
+            : {})}
+          style={[
+            styles.fieldInput,
+            floated && styles.fieldInputFloated,
+            Boolean(trailing) && styles.fieldInputTrailing,
+          ]}
           value={value}
         />
         {trailing ? <View style={styles.trailing}>{trailing}</View> : null}
@@ -272,7 +318,7 @@ export function Dropdown<T>({
   optionLabel: (option: T) => string;
   enabled?: boolean;
 }) {
-  const anchor = useRef<View>(null);
+  const anchor = useRef<ViewInstance>(null);
   const [open, setOpen] = useState(false);
   const [frame, setFrame] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const show = () => {
@@ -293,11 +339,24 @@ export function Dropdown<T>({
           value={selected ? optionLabel(selected) : ''}
         />
       </Pressable>
-      <Modal animationType="fade" onRequestClose={() => setOpen(false)} transparent visible={open}>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setOpen(false)}
+        transparent
+        visible={open}
+      >
         <View style={styles.menuHost}>
           <Pressable style={styles.menuScrim} onPress={() => setOpen(false)} />
-          <View style={[styles.menu, { left: frame.x, top: menuTop, width: frame.width }]}>
-            <ScrollView keyboardShouldPersistTaps="handled" style={styles.menuScroll}>
+          <View
+            style={[
+              styles.menu,
+              { left: frame.x, top: menuTop, width: frame.width },
+            ]}
+          >
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              style={styles.menuScroll}
+            >
               {options.map((option, index) => (
                 <Pressable
                   key={`${optionLabel(option)}-${index}`}
@@ -318,7 +377,10 @@ export function Dropdown<T>({
   );
 }
 
-function menuOrigin(frame: { y: number; height: number }, count: number): number {
+function menuOrigin(
+  frame: { y: number; height: number },
+  count: number
+): number {
   const menuHeight = Math.min(count * 48, 280);
   const below = frame.y + frame.height + 4;
   const limit = Dimensions.get('window').height - 16;
@@ -365,8 +427,18 @@ export function LabeledSwitch({
       onPress={() => onValueChange(!value)}
       style={styles.switchRow}
     >
-      <View style={[styles.switchTrack, value ? styles.switchTrackOn : styles.switchTrackOff]}>
-        <View style={[styles.switchThumb, value ? styles.switchThumbOn : styles.switchThumbOff]} />
+      <View
+        style={[
+          styles.switchTrack,
+          value ? styles.switchTrackOn : styles.switchTrackOff,
+        ]}
+      >
+        <View
+          style={[
+            styles.switchThumb,
+            value ? styles.switchThumbOn : styles.switchThumbOff,
+          ]}
+        />
       </View>
       <Text style={styles.switchLabel}>{label}</Text>
     </Pressable>
@@ -423,7 +495,13 @@ export function SurfaceCard({
 
 export function SignOnDot({ signOn }: { signOn: SignOnView | undefined }) {
   if (signOn?.kind === 'asking') {
-    return <ActivityIndicator color={colors.primary} size="small" style={styles.asking} />;
+    return (
+      <ActivityIndicator
+        color={colors.primary}
+        size="small"
+        style={styles.asking}
+      />
+    );
   }
   const color =
     signOn?.kind === 'ready'
@@ -445,7 +523,9 @@ export function SignOnSummary({ signOn }: { signOn: SignOnView | undefined }) {
   }
   return (
     <Text style={styles.errorText}>
-      {signOn.kind === 'noAnswer' ? `No answer — ${signOn.reason}` : signOn.reason}
+      {signOn.kind === 'noAnswer'
+        ? `No answer — ${signOn.reason}`
+        : signOn.reason}
     </Text>
   );
 }
@@ -453,8 +533,12 @@ export function SignOnSummary({ signOn }: { signOn: SignOnView | undefined }) {
 export function TerminalStatus({ signOn }: { signOn: SignOnView | undefined }) {
   if (!signOn) return null;
   const capabilities =
-    signOn.kind === 'ready' || signOn.kind === 'notReady' ? signOn.capabilities : undefined;
-  const transport = capabilities ? reportedTransport(capabilities.ecrMode) : null;
+    signOn.kind === 'ready' || signOn.kind === 'notReady'
+      ? signOn.capabilities
+      : undefined;
+  const transport = capabilities
+    ? reportedTransport(capabilities.ecrMode)
+    : null;
   const name = capabilities?.terminalName;
   const headline = [
     signOn.kind === 'asking'
@@ -475,7 +559,12 @@ export function TerminalStatus({ signOn }: { signOn: SignOnView | undefined }) {
         <Text
           style={[
             styles.body,
-            { color: signOn.kind === 'ready' ? colors.primary : colors.onSurfaceVariant },
+            {
+              color:
+                signOn.kind === 'ready'
+                  ? colors.primary
+                  : colors.onSurfaceVariant,
+            },
           ]}
         >
           {headline}
@@ -547,29 +636,44 @@ export function DateField({
           value={label}
         />
       </Pressable>
-      <Modal animationType="fade" onRequestClose={() => setOpen(false)} transparent visible={open}>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setOpen(false)}
+        transparent
+        visible={open}
+      >
         <View style={styles.scrim}>
           <View style={styles.dialog}>
             <View style={styles.monthRow}>
               <TextAction
                 label="‹"
                 onPress={() =>
-                  setCursor((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))
+                  setCursor(
+                    (current) =>
+                      new Date(current.getFullYear(), current.getMonth() - 1, 1)
+                  )
                 }
               />
               <Text style={styles.dialogTitle}>
-                {cursor.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+                {cursor.toLocaleDateString('en-GB', {
+                  month: 'long',
+                  year: 'numeric',
+                })}
               </Text>
               <TextAction
                 label="›"
                 onPress={() =>
-                  setCursor((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))
+                  setCursor(
+                    (current) =>
+                      new Date(current.getFullYear(), current.getMonth() + 1, 1)
+                  )
                 }
               />
             </View>
             <View style={styles.days}>
               {calendarDays(cursor).map((day, index) => {
-                const future = day != null && startOfDay(day) > startOfDay(new Date());
+                const future =
+                  day != null && startOfDay(day) > startOfDay(new Date());
                 const selected = day != null && sameDay(day, value);
                 return (
                   <Pressable
@@ -607,7 +711,11 @@ export function DateField({
 function calendarDays(month: Date): Array<Date | null> {
   const first = new Date(month.getFullYear(), month.getMonth(), 1);
   const lead = first.getDay();
-  const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const count = new Date(
+    month.getFullYear(),
+    month.getMonth() + 1,
+    0
+  ).getDate();
   const days: Array<Date | null> = Array.from({ length: lead }, () => null);
   for (let day = 1; day <= count; day += 1) {
     days.push(new Date(month.getFullYear(), month.getMonth(), day));
@@ -616,7 +724,11 @@ function calendarDays(month: Date): Array<Date | null> {
 }
 
 function startOfDay(date: Date): number {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  ).getTime();
 }
 
 function sameDay(left: Date, right: Date): boolean {
@@ -634,8 +746,18 @@ const styles = StyleSheet.create({
     height: 64,
     paddingHorizontal: 4,
   },
-  barButton: { alignItems: 'center', height: 48, justifyContent: 'center', width: 48 },
-  barIcon: { color: colors.onPrimary, fontSize: 34, lineHeight: 36, marginTop: -4 },
+  barButton: {
+    alignItems: 'center',
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
+  barIcon: {
+    color: colors.onPrimary,
+    fontSize: 34,
+    lineHeight: 36,
+    marginTop: -4,
+  },
   barTitle: {
     color: colors.onPrimary,
     flex: 1,
@@ -669,7 +791,12 @@ const styles = StyleSheet.create({
     right: 16,
     width: 56,
   },
-  fabIcon: { color: colors.onPrimary, fontSize: 32, lineHeight: 34, marginTop: -2 },
+  fabIcon: {
+    color: colors.onPrimary,
+    fontSize: 32,
+    lineHeight: 34,
+    marginTop: -2,
+  },
   field: {
     backgroundColor: colors.surface,
     borderRadius: 4,
@@ -680,7 +807,12 @@ const styles = StyleSheet.create({
   },
   fieldDisabled: { opacity: 1 },
   fieldLabel: { backgroundColor: colors.surface, paddingHorizontal: 4 },
-  fieldLabelRest: { color: colors.onSurfaceVariant, fontSize: 16, position: 'absolute', left: 12 },
+  fieldLabelRest: {
+    color: colors.onSurfaceVariant,
+    fontSize: 16,
+    position: 'absolute',
+    left: 12,
+  },
   fieldLabelFloated: {
     fontSize: 12,
     left: 8,
@@ -691,11 +823,21 @@ const styles = StyleSheet.create({
   fieldInputFloated: { marginTop: 8 },
   trailing: { position: 'absolute', right: 4, zIndex: 2 },
   fieldInputTrailing: { paddingRight: 72 },
-  errorText: { color: colors.error, fontSize: 12, marginTop: 4, paddingHorizontal: 16 },
-  hintText: { color: colors.onSurfaceVariant, fontSize: 12, marginTop: 4, paddingHorizontal: 16 },
+  errorText: {
+    color: colors.error,
+    fontSize: 12,
+    marginTop: 4,
+    paddingHorizontal: 16,
+  },
+  hintText: {
+    color: colors.onSurfaceVariant,
+    fontSize: 12,
+    marginTop: 4,
+    paddingHorizontal: 16,
+  },
   dropdown: { zIndex: 1 },
   menuHost: { flex: 1 },
-  menuScrim: { ...StyleSheet.absoluteFillObject },
+  menuScrim: { ...StyleSheet.absoluteFill },
   menuScroll: { maxHeight: 280 },
   chevron: { color: colors.onSurfaceVariant, fontSize: 12, padding: 8 },
   menu: {
@@ -799,9 +941,17 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   dialogTitle: { color: colors.onSurface, fontSize: 22, marginBottom: 12 },
-  dialogActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
+  dialogActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+  },
   calendar: { color: colors.onSurfaceVariant, fontSize: 18, padding: 8 },
-  monthRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  monthRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
   days: { flexDirection: 'row', flexWrap: 'wrap' },
   day: {
     alignItems: 'center',

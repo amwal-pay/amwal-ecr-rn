@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, BackHandler, Platform, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  BackHandler,
+  Platform,
+  StyleSheet,
+  View,
+} from 'react-native';
 import {
   EcrTerminal,
   type EcrSignOn,
@@ -51,17 +57,20 @@ export default function App() {
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (screen.name === 'edit') {
-        setScreen({ name: 'terminals' });
-        return true;
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        if (screen.name === 'edit') {
+          setScreen({ name: 'terminals' });
+          return true;
+        }
+        if (screen.name === 'terminals') {
+          setScreen({ name: 'pay' });
+          return true;
+        }
+        return false;
       }
-      if (screen.name === 'terminals') {
-        setScreen({ name: 'pay' });
-        return true;
-      }
-      return false;
-    });
+    );
     return () => subscription.remove();
   }, [screen]);
 
@@ -168,7 +177,9 @@ export default function App() {
           check(terminal).catch(() => undefined);
         }}
         onDelete={(serial) => {
-          setTerminals((current) => current.filter((terminal) => terminal.serialNumber !== serial));
+          setTerminals((current) =>
+            current.filter((terminal) => terminal.serialNumber !== serial)
+          );
           if (selectedSerial === serial) setSelectedSerial(null);
         }}
         onEdit={(serial) => setScreen({ name: 'edit', originalSerial: serial })}
@@ -181,9 +192,13 @@ export default function App() {
     return (
       <TerminalEditScreen
         original={
-          terminals.find((terminal) => terminal.serialNumber === screen.originalSerial) ?? null
+          terminals.find(
+            (terminal) => terminal.serialNumber === screen.originalSerial
+          ) ?? null
         }
-        others={terminals.filter((terminal) => terminal.serialNumber !== screen.originalSerial)}
+        others={terminals.filter(
+          (terminal) => terminal.serialNumber !== screen.originalSerial
+        )}
         onDone={() => setScreen({ name: 'terminals' })}
         onSave={(terminal) => {
           setTerminals((current) => {

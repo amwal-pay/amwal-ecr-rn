@@ -16,7 +16,12 @@ import type { OperationId, SavedTerminal } from './model';
 import { colors } from './theme';
 
 export type Dialog =
-  | { kind: 'result'; result: EcrResult; operation: OperationId; terminal: SavedTerminal }
+  | {
+      kind: 'result';
+      result: EcrResult;
+      operation: OperationId;
+      terminal: SavedTerminal;
+    }
   | {
       kind: 'inquiry';
       inquiry: EcrInquiry;
@@ -27,7 +32,12 @@ export type Dialog =
       receipt?: EcrReceipt;
       fetching: boolean;
     }
-  | { kind: 'failure'; message: string; reference?: string; terminal?: SavedTerminal };
+  | {
+      kind: 'failure';
+      message: string;
+      reference?: string;
+      terminal?: SavedTerminal;
+    };
 
 export function ResultDialog({
   dialog,
@@ -46,10 +56,19 @@ export function ResultDialog({
   return (
     <Modal animationType="fade" onRequestClose={onDismiss} transparent visible>
       <View style={styles.scrim}>
-        <Pressable accessibilityLabel="Dismiss result" style={styles.backdrop} onPress={onDismiss} />
+        <Pressable
+          accessibilityLabel="Dismiss result"
+          style={styles.backdrop}
+          onPress={onDismiss}
+        />
         <View style={styles.dialog}>
           <OutcomeMark positive={content.positive} />
-          <Text style={[styles.headline, { color: content.positive ? colors.approved : colors.declined }]}>
+          <Text
+            style={[
+              styles.headline,
+              { color: content.positive ? colors.approved : colors.declined },
+            ]}
+          >
             {content.headline}
           </Text>
           <ScrollView style={styles.scroll}>
@@ -60,7 +79,9 @@ export function ResultDialog({
                   <Text style={styles.amount}>{content.amount}</Text>
                 </View>
               ) : null}
-              {content.message ? <Text style={styles.message}>{content.message}</Text> : null}
+              {content.message ? (
+                <Text style={styles.message}>{content.message}</Text>
+              ) : null}
               {content.fields.map((field) => (
                 <View key={field.label} style={styles.fieldRow}>
                   <Text style={styles.fieldLabel}>{field.label}</Text>
@@ -77,11 +98,17 @@ export function ResultDialog({
               {dialog.kind === 'failure' && dialog.reference ? (
                 <View>
                   <Text style={styles.warning}>
-                    The transaction may have completed. Check before taking payment again —
-                    sending it a second time would charge the cardholder twice.
+                    The transaction may have completed. Check before taking
+                    payment again — sending it a second time would charge the
+                    cardholder twice.
                   </Text>
-                  <Pressable onPress={() => onInquire(dialog.reference!)} style={styles.outlined}>
-                    <Text style={styles.outlinedText}>Inquire by reference</Text>
+                  <Pressable
+                    onPress={() => onInquire(dialog.reference!)}
+                    style={styles.outlined}
+                  >
+                    <Text style={styles.outlinedText}>
+                      Inquire by reference
+                    </Text>
                   </Pressable>
                   <Text style={styles.reference}>{dialog.reference}</Text>
                 </View>
@@ -127,9 +154,13 @@ function present(dialog: Dialog): {
           ? `Only ${result.amount} of ${result.requestedAmount} was approved. Collect the difference by another means.`
           : null,
         fields: [
-          dialog.operation === 'void' ? null : { label: 'Auth code', value: result.authCode },
+          dialog.operation === 'void'
+            ? null
+            : { label: 'Auth code', value: result.authCode },
           { label: 'Card', value: result.maskedPan },
-        ].filter((field): field is { label: string; value: string } => Boolean(field?.value)),
+        ].filter((field): field is { label: string; value: string } =>
+          Boolean(field?.value)
+        ),
         raw: result.raw || null,
       };
     }
@@ -190,7 +221,10 @@ function present(dialog: Dialog): {
       { label: 'Receipt number', value: txn.stan },
       { label: 'Type', value: txn.type },
       { label: 'Card', value: txn.maskedPan },
-      { label: 'Date/Time', value: txn.transactionTime ? readableTime(txn.transactionTime) : '' },
+      {
+        label: 'Date/Time',
+        value: txn.transactionTime ? readableTime(txn.transactionTime) : '',
+      },
     ].filter((field) => field.value),
     raw: inquiry.raw || null,
   };
@@ -216,7 +250,7 @@ function ReceiptSection({
   if (!receipt) {
     return (
       <Pressable onPress={onRequest} style={styles.outlined}>
-        <Text style={styles.outlinedText}>▦  QR receipt</Text>
+        <Text style={styles.outlinedText}>▦ QR receipt</Text>
       </Pressable>
     );
   }
@@ -244,7 +278,9 @@ function RawSection({ raw }: { raw: string }) {
     <View>
       <View style={styles.rawRow}>
         <Pressable onPress={() => setOpen((current) => !current)}>
-          <Text style={styles.closeText}>{open ? 'Hide raw response' : 'Show raw response'}</Text>
+          <Text style={styles.closeText}>
+            {open ? 'Hide raw response' : 'Show raw response'}
+          </Text>
         </Pressable>
         {open ? (
           <Pressable
@@ -257,7 +293,11 @@ function RawSection({ raw }: { raw: string }) {
           </Pressable>
         ) : null}
       </View>
-      {open ? <Text selectable style={styles.raw}>{raw}</Text> : null}
+      {open ? (
+        <Text selectable style={styles.raw}>
+          {raw}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -274,7 +314,6 @@ function OutcomeMark({ positive }: { positive: boolean }) {
 function QrView({ value }: { value: string }) {
   const qr = QRCode.create(value, { errorCorrectionLevel: 'M' });
   const size = qr.modules.size;
-  const cell = 4;
   const rows = [];
   for (let y = 0; y < size; y += 1) {
     const cells = [];
@@ -282,11 +321,7 @@ function QrView({ value }: { value: string }) {
       cells.push(
         <View
           key={`${x}-${y}`}
-          style={{
-            backgroundColor: qr.modules.get(x, y) ? colors.onSurface : '#fff',
-            height: cell,
-            width: cell,
-          }}
+          style={qr.modules.get(x, y) ? styles.qrCellOn : styles.qrCellOff}
         />
       );
     }
@@ -307,7 +342,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: colors.scrim,
   },
   dialog: {
@@ -338,7 +373,12 @@ const styles = StyleSheet.create({
   },
   scroll: { flexGrow: 0, marginTop: 8 },
   copy: { gap: 8, paddingBottom: 8 },
-  amountRow: { alignItems: 'center', flexDirection: 'row', gap: 6, justifyContent: 'center' },
+  amountRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+  },
   omr: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
   amount: { color: colors.onSurface, fontSize: 22 },
   message: { color: colors.onSurface, fontSize: 14, textAlign: 'center' },
@@ -361,14 +401,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
   },
-  receiptRow: { alignItems: 'center', flexDirection: 'row', gap: 12, marginTop: 8 },
+  receiptRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
   receiptBlock: { alignItems: 'center', gap: 8, marginTop: 8 },
   error: { color: colors.error, fontSize: 12 },
-  rawRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  rawRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
   close: { alignSelf: 'flex-end', padding: 12 },
   closeText: { color: colors.primary, fontWeight: '600' },
   copyIcon: { color: colors.onSurfaceVariant, fontSize: 18, padding: 8 },
   raw: { color: colors.onSurface, fontFamily: 'monospace', fontSize: 11 },
   qr: { backgroundColor: '#fff', padding: 8 },
   qrRow: { flexDirection: 'row' },
+  qrCellOn: { backgroundColor: colors.onSurface, height: 4, width: 4 },
+  qrCellOff: { backgroundColor: '#fff', height: 4, width: 4 },
 });
