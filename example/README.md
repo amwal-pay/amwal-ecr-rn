@@ -10,7 +10,7 @@ Sample till for `react-native-amwal-ecr`, laid out like the Android ECR simulato
 - Result dialog: approved, partial approval, declined, outcome unknown with
   Inquire by reference, raw response, and a QR receipt after an inquiry.
   Closing it asks a Wi-Fi or USB terminal to close its receipt.
-- POS terminals: Wi-Fi/LAN and Web Service signing cards (SIT / UAT / PROD),
+- POS terminals: Wi-Fi/CABLE and Web Service signing cards (SIT / UAT / PROD),
   and a card per terminal with Check, Edit, and Delete.
 
 Terminals and signing keys are saved on the device with

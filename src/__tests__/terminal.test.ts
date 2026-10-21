@@ -20,7 +20,7 @@ import { nativeEcr } from '../native';
 
 const mockNativeEcr = jest.mocked(nativeEcr);
 
-/** Wi‑Fi / LAN signing placeholder (valid hex, not a real secret). */
+/** Wi‑Fi signing placeholder (valid hex, not a real secret). */
 const SECURE_HASH_KEY_ECR_WIFI = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
 /** Web Service REST signing placeholder (valid hex, not a real secret). */

@@ -127,7 +127,7 @@ const hostedTerminal = new EcrTerminal({
 });
 ```
 
-The Web Service path signs with its own secret (different from the LAN key);
+The Web Service path signs with its own secret (different from the Wi-Fi key);
 both are issued by Amwal and both travel through `secureHashKey`. Receipt fetch
 is only available on the local transports, and `isReachable()` resolves `false`
 for `webService` — there is no local listener to probe.

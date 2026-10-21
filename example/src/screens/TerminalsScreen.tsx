@@ -105,13 +105,13 @@ function SettingsCards({
   return (
     <View style={styles.settings}>
       <SurfaceCard>
-        <Text style={styles.cardTitle}>Wi‑Fi / LAN settings</Text>
+        <Text style={styles.cardTitle}>Wi‑Fi settings</Text>
         <Text style={styles.caption}>
           Signing key for Wi‑Fi, USB cable, and Bluetooth ECR (sorted key=value
           HMAC).
         </Text>
         <HashKeyField
-          label="Wi-Fi/LAN secure hash key"
+          label="Wi-Fi/CABLE secure hash key"
           value={settings.wifiSecureHashKey}
           onChangeText={(wifiSecureHashKey) =>
             onSettings({ ...settings, wifiSecureHashKey })

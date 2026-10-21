@@ -132,7 +132,7 @@ function isSecret(key: string): boolean {
 export function signingKeyLabel(transport: EcrTransport): string {
   return transport === 'webService'
     ? 'Web Service secure hash key'
-    : 'Wi-Fi/LAN secure hash key';
+    : 'Wi-Fi/CABLE secure hash key';
 }
 
 export function reportedTransport(ecrMode: number): string | null {
@@ -184,7 +184,7 @@ export function terminalPlan(
   }
   if (terminal.transport === 'wifi' || terminal.transport === 'ethernet') {
     if (!terminal.ipAddress.trim())
-      issues.push('IP address is required for LAN ECR');
+      issues.push('IP address is required for Wi-Fi ECR');
     if (terminal.port < 1 || terminal.port > 65535) {
       issues.push('Port must be between 1 and 65535 (default 9100)');
     }
@@ -209,7 +209,7 @@ export function terminalPlan(
     terminal.transport === 'webService'
       ? 'HTTPS Web Service (JSON HMAC)'
       : terminal.transport === 'wifi' || terminal.transport === 'ethernet'
-        ? 'TCP LAN (sorted key=value HMAC)'
+        ? 'TCP Wi-Fi (sorted key=value HMAC)'
         : mode.label;
 
   const connection =
