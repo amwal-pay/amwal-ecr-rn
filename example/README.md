@@ -7,9 +7,12 @@ Sample till for `react-native-amwal-ecr`, laid out like the Android ECR simulato
   receipt or reference, then the POS terminal, its sign-on line, and the
   active-terminal card. **Start transaction** / **Look up transaction** stays
   disabled until that terminal’s signing key and address are complete.
-- Result dialog: approved, partial approval, declined, outcome unknown with
-  Inquire by reference, raw response, and a QR receipt after an inquiry.
-  Closing it asks a Wi-Fi or USB terminal to close its receipt.
+- Result dialog: approved, partial approval, declined, or Not completed.
+  An unknown outcome offers Inquire by reference. The dialog also shows the
+  raw response and a QR receipt after an inquiry.
+  **Close receipt** on that dialog clears a Wi-Fi, USB, or Web Service
+  terminal. Closing the dialog does not. An approved app-to-app result offers
+  **Print receipt**. **Manual settlement** sits under Start transaction.
 - POS terminals: Wi-Fi/CABLE and Web Service signing cards (SIT / UAT / PROD),
   and a card per terminal with Check, Edit, and Delete.
 
@@ -24,11 +27,10 @@ yarn   # or: node .yarn/releases/yarn-4.11.0.cjs install
 ```
 
 Local native SDKs are selected in `android/gradle.properties` and
-`ios/ecr_sdk.properties`. This example defaults to the sibling
-`ECR-simulator` module and `AmwalECR-iOS-CocoaPods` checkout. On Android the
-package's own `gradle.properties` wins over this one, so build with
-`--extra-params "-PecrSdkDependency=project"` to use the local SDK. See the
-package README sections "Local native SDKs" and "Running the example".
+`ios/ecr_sdk.properties`. This example builds the sibling `ECR-simulator`
+module and the sibling `AmwalECR-iOS-CocoaPods` checkout. Those files win
+over the package defaults, so `ecrSdkDependency=maven` and
+`ecrSdkDependency=cocoapods` switch it to Maven Central and CocoaPods trunk.
 
 This is a [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 

@@ -61,9 +61,32 @@ class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
 
   override func bundleURL() -> URL? {
 #if DEBUG
-    RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index")
+    let provider = RCTBundleURLProvider.sharedSettings()
+    if let discovered = provider.jsBundleURL(forBundleRoot: "index") {
+      return discovered
+    }
+    // Prebuilt React does not probe Metro, and a Debug simulator build does
+    // not embed main.jsbundle. Load the packager directly.
+    return provider.jsBundleURL(
+      forBundleRoot: "index",
+      packagerServerScheme: "http",
+      packagerServerHost: Self.metroHost(),
+      packagerOptionsUpdater: { $0 }
+    )
 #else
     Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #endif
+  }
+
+  private static func metroHost() -> String {
+    guard
+      let path = Bundle.main.path(forResource: "ip", ofType: "txt"),
+      let host = try? String(contentsOfFile: path, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      !host.isEmpty
+    else {
+      return "localhost"
+    }
+    return host
   }
 }

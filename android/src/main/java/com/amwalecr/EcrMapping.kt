@@ -4,6 +4,8 @@ import com.amwalpay.ecr.EcrInquiry
 import com.amwalpay.ecr.EcrReceipt
 import com.amwalpay.ecr.EcrReceiptClosed
 import com.amwalpay.ecr.EcrResult
+import com.amwalpay.ecr.EcrSettlement
+import com.amwalpay.ecr.EcrSettlementTotal
 import com.amwalpay.ecr.EcrSignOn
 import com.amwalpay.ecr.EcrTerminalCapabilities
 import com.amwalpay.ecr.EcrTransaction
@@ -112,6 +114,41 @@ internal object EcrMapping {
     }
   }
 
+  fun settlement(settlement: EcrSettlement): WritableMap = when (settlement) {
+    is EcrSettlement.Settled -> Arguments.createMap().apply {
+      putString("outcome", "settled")
+      putString("merchantReferenceId", settlement.merchantReference)
+      putString("batchId", settlement.batchId)
+      putString("currency", settlement.currency)
+      putString("startTime", settlement.startTime)
+      putString("endTime", settlement.endTime)
+      putInt("totalTransactions", settlement.totalTransactions)
+      putString("netAmount", settlement.netAmount)
+      putMap("totals", totals(settlement.totals))
+      putString("raw", settlement.raw)
+    }
+    is EcrSettlement.NothingToSettle -> Arguments.createMap().apply {
+      putString("outcome", "nothingToSettle")
+      putString("merchantReferenceId", settlement.merchantReference)
+      putString("message", settlement.message)
+      putString("raw", settlement.raw)
+    }
+    is EcrSettlement.NotSettled -> Arguments.createMap().apply {
+      putString("outcome", "notSettled")
+      putString("merchantReferenceId", settlement.merchantReference)
+      putString("responseCode", settlement.responseCode)
+      putString("status", settlement.status)
+      putString("reason", settlement.reason)
+      settlement.uploadedTransactions?.let { putInt("uploadedTransactions", it) }
+      putString("raw", settlement.raw)
+    }
+    is EcrSettlement.Failed -> Arguments.createMap().apply {
+      putString("outcome", "failed")
+      putString("merchantReferenceId", settlement.merchantReference)
+      putMap("failure", failure(settlement.failure))
+    }
+  }
+
   fun receiptClosed(closed: EcrReceiptClosed): WritableMap = when (closed) {
     is EcrReceiptClosed.Idle -> Arguments.createMap().apply {
       putString("outcome", "idle")
@@ -143,6 +180,20 @@ internal object EcrMapping {
       putString("kind", kind)
       putString("message", message)
     })
+  }
+
+  private fun totals(values: Map<String, EcrSettlementTotal>): WritableMap {
+    val map = Arguments.createMap()
+    for ((type, total) in values) {
+      map.putMap(
+        type,
+        Arguments.createMap().apply {
+          putInt("count", total.count)
+          putString("amount", total.amount)
+        },
+      )
+    }
+    return map
   }
 
   private fun transaction(value: EcrTransaction): WritableMap = Arguments.createMap().apply {

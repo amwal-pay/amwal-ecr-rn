@@ -1,5 +1,8 @@
 import type { EcrEnvironment, EcrTransport } from 'react-native-amwal-ecr';
 
+export { displayMessageFromRaw } from 'react-native-amwal-ecr';
+import type { SignOnView } from './signOn';
+
 export const MODES: {
   id: EcrTransport;
   label: string;
@@ -84,6 +87,23 @@ const MAX_AMOUNT = 100000;
 const FRACTION = 3;
 const MAX_DIGITS = String(Math.round(MAX_AMOUNT * 1000)).length;
 
+/** Wi-Fi and USB only. Web Service has no sign-on, and app to app is a handover. */
+export function asksSignOn(terminal: SavedTerminal): boolean {
+  return terminal.transport === 'wifi' || terminal.transport === 'usbCable';
+}
+
+/** Matches the SDK wait: 130s for Web Service, 120s otherwise. */
+export function responseTimeoutSeconds(terminal: SavedTerminal): number {
+  return terminal.transport === 'webService' ? 130 : 120;
+}
+
+export function countdownLabel(remainingSeconds: number): string {
+  const safe = Math.max(0, remainingSeconds);
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 export function modeOf(transport: EcrTransport) {
   return MODES.find((mode) => mode.id === transport) ?? MODES[1]!;
 }
@@ -150,9 +170,49 @@ export function reportedTransport(ecrMode: number): string | null {
   }
 }
 
+/** Display names for every protocol operation, including those kept off the menu. */
+const OPERATION_LABELS: Record<string, string> = {
+  SALE: 'Sale',
+  VOID: 'Void',
+  REFUND: 'Refund',
+  INQUIRY: 'Inquiry',
+  RECEIPT: 'Receipt',
+  SIGN_ON: 'Sign-on',
+  CLOSE_RECEIPT: 'Close receipt',
+  SETTLEMENT: 'Settlement',
+};
+
 export function permittedLabel(messageType: string): string {
-  return (
-    MENU.find((item) => item.messageType === messageType)?.label ?? messageType
+  return OPERATION_LABELS[messageType] ?? messageType;
+}
+
+/**
+ * Operations the cashier can pick.
+ *
+ * Wi-Fi and USB narrow to what sign-on permitted, and fall back to the whole
+ * menu when the terminal has not answered or permitted none of these. Wi-Fi
+ * supports void, so Void stays on that menu when sign-on leaves it out.
+ * Receipt, sign-on, close receipt, and settlement stay off this list. Web
+ * Service has no sign-on, so it keeps Sale, Void, Refund, and Inquiry.
+ */
+export function operationsFor(
+  terminal: SavedTerminal | undefined,
+  signOn: SignOnView | undefined
+): typeof MENU {
+  if (!terminal || !asksSignOn(terminal)) return MENU;
+  if (!signOn || (signOn.kind !== 'ready' && signOn.kind !== 'notReady')) {
+    return MENU;
+  }
+  const permitted = signOn.capabilities?.permitted ?? [];
+  if (permitted.length === 0) return MENU;
+  const allowed = new Set(permitted.map((entry) => entry.messageType));
+  const narrowed = MENU.filter((item) => allowed.has(item.messageType));
+  const menu = narrowed.length > 0 ? narrowed : MENU;
+  if (terminal.transport !== 'wifi' || menu.some((item) => item.id === 'void')) {
+    return menu;
+  }
+  return MENU.filter(
+    (item) => item.id === 'void' || menu.some((kept) => kept.id === item.id)
   );
 }
 
@@ -182,7 +242,7 @@ export function terminalPlan(
       'Secure hash key must be an even-length hex string of at least 16 characters'
     );
   }
-  if (terminal.transport === 'wifi' || terminal.transport === 'ethernet') {
+  if (terminal.transport === 'wifi') {
     if (!terminal.ipAddress.trim())
       issues.push('IP address is required for Wi-Fi ECR');
     if (terminal.port < 1 || terminal.port > 65535) {
@@ -208,7 +268,7 @@ export function terminalPlan(
   const transportLabel =
     terminal.transport === 'webService'
       ? 'HTTPS Web Service (JSON HMAC)'
-      : terminal.transport === 'wifi' || terminal.transport === 'ethernet'
+      : terminal.transport === 'wifi'
         ? 'TCP Wi-Fi (sorted key=value HMAC)'
         : mode.label;
 
@@ -350,7 +410,7 @@ export function validateTerminal(
     errors.duplicate =
       'A terminal with this serial number is already registered';
   }
-  if (draft.transport === 'wifi' || draft.transport === 'ethernet') {
+  if (draft.transport === 'wifi') {
     if (!draft.ipAddress.trim()) errors.ip = 'Enter the terminal IP address';
     else if (!IPV4.test(draft.ipAddress.trim())) {
       errors.ip = 'Enter a valid IPv4 address, for example 192.168.1.50';
@@ -385,11 +445,13 @@ export function merchantReferenceError(value: string): string | null {
 
 export function unreachableMessage(
   terminal: SavedTerminal,
-  detail?: string
+  probe?: { endpoint: string; error?: string; port: number }
 ): string {
-  const head = detail
-    ? `${connectionSummary(terminal)} is not reachable\n(${detail})`
-    : `${connectionSummary(terminal)} is not reachable`;
+  const endpoint = probe?.endpoint || connectionSummary(terminal);
+  const head = probe?.error
+    ? `${endpoint} is not reachable\n(${probe.error})`
+    : `${endpoint} is not reachable`;
+  const port = probe && probe.port > 0 ? probe.port : terminal.port || 9100;
   if (terminal.transport === 'usbCable') {
     return (
       `${head}\n\nCheck:\n` +
@@ -402,14 +464,17 @@ export function unreachableMessage(
   if (terminal.transport === 'appToApp') {
     return (
       `${head}\n\nCheck:\n` +
-      '• The Amwal payment app (com.amwalpay.pos) is installed\n' +
-      '• It can accept an ECR handover'
+      '• The Amwal payment app is installed on this device\n' +
+      '• It is a build that accepts app-to-app requests\n' +
+      '• The merchant is signed in — open it once and sign in\n' +
+      `• The application ID matches (${endpoint})\n` +
+      '• Serial number matches the terminal this app drives'
     );
   }
   return (
     `${head}\n\nCheck:\n` +
     '• POS app is in ECR mode (Wi-Fi) and shows its IP under the card logos\n' +
-    `• Registered IP matches that address (port ${terminal.port || 9100})\n` +
+    `• Registered IP matches that address (port ${port})\n` +
     '• Serial number matches the terminal you selected\n' +
     '• Both devices are on the same Wi-Fi network\n' +
     '• If testing on one phone, try IP 127.0.0.1'

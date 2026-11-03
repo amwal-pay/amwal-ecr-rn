@@ -28,17 +28,23 @@ final class AmwalEcrImpl: NSObject {
         do {
             let call = try Call(request)
             guard call.isIpTransport else {
-                resolve(false)
+                resolve(Self.unreachableMap(call))
                 return
             }
             let session: EcrOpenedSession
             do {
                 session = try call.makeSession()
             } catch is SessionUnavailable {
-                resolve(false)
+                resolve(Self.unreachableMap(call))
                 return
             }
-            queue.async { resolve(session.probeReachability()?.reachable ?? false) }
+            queue.async {
+                if let probe = session.probeReachability() {
+                    resolve(Self.reachabilityMap(probe))
+                } else {
+                    resolve(Self.unreachableMap(call))
+                }
+            }
         } catch {
             rejectError(error, reject)
         }
@@ -132,6 +138,21 @@ final class AmwalEcrImpl: NSObject {
         resolver resolve: @escaping RCTPromiseResolveBlock,
         rejecter reject: @escaping RCTPromiseRejectBlock
     ) {
+        do {
+            let call = try Call(request)
+            guard call.supportsSignOn else {
+                resolve(ReactEcrMapping.failedResult(
+                    merchantReferenceId: call.merchantReferenceId,
+                    kind: ReactEcrMapping.unsupported,
+                    message: "Sign-on is only supported over Wi-Fi and USB cable. "
+                        + "Transport '\(call.transport)' was not asked."
+                ))
+                return
+            }
+        } catch {
+            rejectError(error, reject)
+            return
+        }
         run(request, resolve, reject) { call, session in
             ReactEcrMapping.signOn(
                 try session.signOn(merchantReference: call.merchantReferenceId)
@@ -145,10 +166,53 @@ final class AmwalEcrImpl: NSObject {
         rejecter reject: @escaping RCTPromiseRejectBlock
     ) {
         run(request, resolve, reject) { call, session in
-            ReactEcrMapping.receiptClosed(
-                try session.closeReceipt(merchantReference: call.merchantReferenceId)
+            guard call.supportsCloseReceipt else {
+                return ReactEcrMapping.failedResult(
+                    merchantReferenceId: call.merchantReferenceId,
+                    kind: ReactEcrMapping.unsupported,
+                    message: "Closing the receipt is not supported over this transport"
+                )
+            }
+            return ReactEcrMapping.receiptClosed(
+                try session.closeReceipt(
+                    merchantReference: call.merchantReferenceId,
+                    originalMerchantReference: call.originalMerchantReference
+                )
             )
         }
+    }
+
+    @objc func settlement(
+        _ request: [String: Any],
+        resolver resolve: @escaping RCTPromiseResolveBlock,
+        rejecter reject: @escaping RCTPromiseRejectBlock
+    ) {
+        run(request, resolve, reject) { call, session in
+            guard call.supportsSettlement else {
+                return ReactEcrMapping.failedResult(
+                    merchantReferenceId: call.merchantReferenceId,
+                    kind: ReactEcrMapping.unsupported,
+                    message: "Settlement is not supported over this transport"
+                )
+            }
+            return ReactEcrMapping.settlement(
+                try session.settlement(merchantReference: call.merchantReferenceId)
+            )
+        }
+    }
+
+    @objc func printReceipt(
+        _ request: [String: Any],
+        resolver resolve: @escaping RCTPromiseResolveBlock,
+        rejecter _: @escaping RCTPromiseRejectBlock
+    ) {
+        // PRINT is an Android payment-app intent. iOS sends nothing.
+        _ = request
+        resolve([
+            "status": "FAILED",
+            "message": "Print is only available over app to app on Android. Nothing was sent.",
+            "ok": false,
+        ])
     }
 
     @objc func receipt(
@@ -156,6 +220,20 @@ final class AmwalEcrImpl: NSObject {
         resolver resolve: @escaping RCTPromiseResolveBlock,
         rejecter reject: @escaping RCTPromiseRejectBlock
     ) {
+        do {
+            let call = try Call(request)
+            guard call.supportsReceipt else {
+                resolve(ReactEcrMapping.failedResult(
+                    merchantReferenceId: call.merchantReferenceId,
+                    kind: ReactEcrMapping.unsupported,
+                    message: "Receipt fetch is not supported over this transport"
+                ))
+                return
+            }
+        } catch {
+            rejectError(error, reject)
+            return
+        }
         run(request, resolve, reject) { call, session in
             ReactEcrMapping.receipt(
                 try session.receipt(
@@ -210,6 +288,29 @@ final class AmwalEcrImpl: NSObject {
                 )
             )
         }
+    }
+
+    private static func unreachableMap(_ call: Call) -> [String: Any] {
+        let endpoint = call.host.isEmpty ? call.transport : call.host
+        return [
+            "reachable": false,
+            "host": call.host,
+            "port": 0,
+            "endpoint": endpoint,
+        ]
+    }
+
+    private static func reachabilityMap(_ probe: EcrReachability) -> [String: Any] {
+        var map: [String: Any] = [
+            "reachable": probe.reachable,
+            "host": probe.host,
+            "port": probe.port,
+            "endpoint": probe.endpoint,
+        ]
+        if let error = probe.error {
+            map["error"] = error
+        }
+        return map
     }
 
     private func run(
@@ -354,7 +455,7 @@ private struct Call {
         transport = raw["transport"] as? String ?? "wifi"
         // The payment host addresses a Web Service terminal; only the IP
         // transports dial an address of their own.
-        if transport == "ethernet" || transport == "wifi" {
+        if transport == "wifi" {
             host = try Self.requiredString(raw, "host")
         } else {
             host = (raw["host"] as? String)?.trimmed ?? ""
@@ -366,10 +467,18 @@ private struct Call {
         config = Self.config(raw["config"] as? [String: Any])
     }
 
-    var isIpTransport: Bool { transport == "ethernet" || transport == "wifi" }
+    var isIpTransport: Bool { transport == "wifi" }
     var isWebService: Bool { transport == "webService" || transport == "web_service" }
+    var supportsSignOn: Bool { isIpTransport }
+    var supportsReceipt: Bool { isIpTransport }
+    var supportsCloseReceipt: Bool { isIpTransport || isWebService }
+    var supportsSettlement: Bool { supportsCloseReceipt }
 
-    /// Wi-Fi / ethernet and Web Service, through `EcrSessions.plan` / `open`.
+    var originalMerchantReference: String {
+        (raw["originalMerchantReference"] as? String)?.trimmed ?? ""
+    }
+
+    /// Wi-Fi and Web Service, through `EcrSessions.plan` / `open`.
     ///
     /// The same dispatch the Flutter iOS bridge uses against AmwalECR 0.2.1.
     /// USB cable is a link in that SDK, and the caller has to supply the byte

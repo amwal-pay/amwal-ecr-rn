@@ -388,6 +388,26 @@ function menuOrigin(
   return below;
 }
 
+export function SecondaryButton({
+  label,
+  onPress,
+  enabled = true,
+}: {
+  label: string;
+  onPress: () => void;
+  enabled?: boolean;
+}) {
+  return (
+    <Pressable
+      disabled={!enabled}
+      onPress={onPress}
+      style={[styles.secondary, !enabled && styles.primaryDisabled]}
+    >
+      <Text style={styles.secondaryText}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export function PrimaryButton({
   label,
   onPress,
@@ -861,6 +881,16 @@ const styles = StyleSheet.create({
   },
   primaryDisabled: { opacity: 0.38 },
   primaryText: { color: colors.onPrimary, fontSize: 16, fontWeight: '600' },
+  secondary: {
+    alignItems: 'center',
+    borderColor: colors.primary,
+    borderRadius: 20,
+    borderWidth: 1,
+    height: 48,
+    justifyContent: 'center',
+    marginTop: 12,
+  },
+  secondaryText: { color: colors.primary, fontSize: 16, fontWeight: '600' },
   textAction: { paddingHorizontal: 12, paddingVertical: 8 },
   textActionLabel: { color: colors.primary, fontSize: 14, fontWeight: '600' },
   switchRow: {

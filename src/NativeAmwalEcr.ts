@@ -5,7 +5,9 @@ import {
 } from 'react-native';
 
 export interface Spec extends TurboModule {
-  isReachable(request: CodegenTypes.UnsafeObject): Promise<boolean>;
+  isReachable(
+    request: CodegenTypes.UnsafeObject
+  ): Promise<CodegenTypes.UnsafeObject>;
   sale(request: CodegenTypes.UnsafeObject): Promise<CodegenTypes.UnsafeObject>;
   voidTransaction(
     request: CodegenTypes.UnsafeObject
@@ -23,6 +25,12 @@ export interface Spec extends TurboModule {
     request: CodegenTypes.UnsafeObject
   ): Promise<CodegenTypes.UnsafeObject>;
   closeReceipt(
+    request: CodegenTypes.UnsafeObject
+  ): Promise<CodegenTypes.UnsafeObject>;
+  settlement(
+    request: CodegenTypes.UnsafeObject
+  ): Promise<CodegenTypes.UnsafeObject>;
+  printReceipt(
     request: CodegenTypes.UnsafeObject
   ): Promise<CodegenTypes.UnsafeObject>;
   receipt(

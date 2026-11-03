@@ -10,8 +10,13 @@ import {
   View,
 } from 'react-native';
 import QRCode from 'qrcode';
-import type { EcrInquiry, EcrReceipt, EcrResult } from 'react-native-amwal-ecr';
-import { readableTime } from './model';
+import type {
+  EcrInquiry,
+  EcrReceipt,
+  EcrResult,
+  EcrSettlement,
+} from 'react-native-amwal-ecr';
+import { countdownLabel, displayMessageFromRaw, readableTime } from './model';
 import type { OperationId, SavedTerminal } from './model';
 import { colors } from './theme';
 
@@ -37,6 +42,11 @@ export type Dialog =
       message: string;
       reference?: string;
       terminal?: SavedTerminal;
+    }
+  | {
+      kind: 'settlement';
+      settlement: EcrSettlement;
+      terminal: SavedTerminal;
     };
 
 export function ResultDialog({
@@ -44,11 +54,19 @@ export function ResultDialog({
   onDismiss,
   onInquire,
   onReceipt,
+  onCloseReceipt,
+  onPrint,
+  onCancelFetch,
+  wait,
 }: {
   dialog: Dialog | null;
   onDismiss: () => void;
   onInquire: (reference: string) => void;
   onReceipt: () => void;
+  onCloseReceipt?: () => void;
+  onPrint?: () => void;
+  onCancelFetch?: () => void;
+  wait?: { remaining: number; total: number } | null;
 }) {
   const content = useMemo(() => (dialog ? present(dialog) : null), [dialog]);
   if (!dialog || !content) return null;
@@ -91,8 +109,10 @@ export function ResultDialog({
               {dialog.kind === 'inquiry' ? (
                 <ReceiptSection
                   fetching={dialog.fetching}
+                  onCancel={onCancelFetch}
                   onRequest={onReceipt}
                   receipt={dialog.receipt}
+                  wait={wait}
                 />
               ) : null}
               {dialog.kind === 'failure' && dialog.reference ? (
@@ -116,6 +136,16 @@ export function ResultDialog({
               {content.raw ? <RawSection raw={content.raw} /> : null}
             </View>
           </ScrollView>
+          {onPrint ? (
+            <Pressable onPress={onPrint} style={styles.outlined}>
+              <Text style={styles.outlinedText}>Print receipt</Text>
+            </Pressable>
+          ) : null}
+          {onCloseReceipt ? (
+            <Pressable onPress={onCloseReceipt} style={styles.outlined}>
+              <Text style={styles.outlinedText}>Close receipt</Text>
+            </Pressable>
+          ) : null}
           <Pressable onPress={onDismiss} style={styles.close}>
             <Text style={styles.closeText}>Close</Text>
           </Pressable>
@@ -123,6 +153,23 @@ export function ResultDialog({
       </View>
     </Modal>
   );
+}
+
+const SETTLEMENT_TYPE_LABELS: Record<string, string> = {
+  SALE: 'Sales',
+  REFUND: 'Refunds',
+  VOID: 'Voids',
+  PRE_AUTH: 'Pre-auths',
+  CAPTURE: 'Captures',
+};
+
+function settlementTypeLabel(type: string): string {
+  return SETTLEMENT_TYPE_LABELS[type] ?? type;
+}
+
+function readableWireTime(value: string): string {
+  if (value.length !== 14) return value;
+  return `${value.slice(6, 8)}/${value.slice(4, 6)}/${value.slice(0, 4)} ${value.slice(8, 10)}:${value.slice(10, 12)}`;
 }
 
 function present(dialog: Dialog): {
@@ -133,9 +180,79 @@ function present(dialog: Dialog): {
   fields: Array<{ label: string; value: string }>;
   raw: string | null;
 } {
+  if (dialog.kind === 'settlement') {
+    const settlement = dialog.settlement;
+    if (settlement.outcome === 'settled') {
+      return {
+        headline: 'Settled',
+        positive: true,
+        amount: settlement.netAmount,
+        message: settlement.batchId
+          ? `Batch ${settlement.batchId} is closed`
+          : null,
+        fields: [
+          {
+            label: 'Transactions',
+            value: String(settlement.totalTransactions),
+          },
+          ...Object.entries(settlement.totals).map(([type, total]) => ({
+            label: `${settlementTypeLabel(type)} × ${total.count}`,
+            value: total.amount,
+          })),
+          ...(settlement.endTime
+            ? [{ label: 'Closed at', value: readableWireTime(settlement.endTime) }]
+            : []),
+        ],
+        raw: settlement.raw || null,
+      };
+    }
+    if (settlement.outcome === 'nothingToSettle') {
+      return {
+        headline: 'Nothing to settle',
+        positive: true,
+        amount: '',
+        message: settlement.message,
+        fields: [],
+        raw: settlement.raw || null,
+      };
+    }
+    if (settlement.outcome === 'notSettled') {
+      return {
+        headline: 'Not settled',
+        positive: false,
+        amount: '',
+        message: settlement.reason,
+        fields: [
+          settlement.status
+            ? { label: 'Status', value: settlement.status }
+            : null,
+          settlement.responseCode
+            ? { label: 'Code', value: settlement.responseCode }
+            : null,
+          settlement.uploadedTransactions != null
+            ? {
+                label: 'Uploaded',
+                value: String(settlement.uploadedTransactions),
+              }
+            : null,
+        ].filter((field): field is { label: string; value: string } =>
+          Boolean(field)
+        ),
+        raw: settlement.raw || null,
+      };
+    }
+    return {
+      headline: 'Not completed',
+      positive: false,
+      amount: '',
+      message: settlement.failure.message,
+      fields: [],
+      raw: null,
+    };
+  }
   if (dialog.kind === 'failure') {
     return {
-      headline: dialog.reference ? 'Outcome unknown' : 'Not completed',
+      headline: 'Not completed',
       positive: false,
       amount: '',
       message: dialog.message,
@@ -169,13 +286,13 @@ function present(dialog: Dialog): {
         headline: 'Declined',
         positive: false,
         amount: '',
-        message: result.reason,
+        message: displayMessageFromRaw(result.raw, result.reason),
         fields: [],
         raw: result.raw || null,
       };
     }
     return {
-      headline: result.outcomeIsUnknown ? 'Outcome unknown' : 'Not completed',
+      headline: 'Not completed',
       positive: false,
       amount: '',
       message: result.failure.message,
@@ -190,7 +307,7 @@ function present(dialog: Dialog): {
       headline: 'Not found',
       positive: false,
       amount: '',
-      message: inquiry.reason,
+      message: displayMessageFromRaw(inquiry.raw, inquiry.reason),
       fields: [],
       raw: inquiry.raw || null,
     };
@@ -216,7 +333,7 @@ function present(dialog: Dialog): {
       ? `Only ${txn.authorizedAmount} of ${txn.amount} was approved. Collect the difference by another means.`
       : settled
         ? null
-        : txn.status,
+        : displayMessageFromRaw(inquiry.raw, txn.status),
     fields: [
       { label: 'Receipt number', value: txn.stan },
       { label: 'Type', value: txn.type },
@@ -234,23 +351,55 @@ function ReceiptSection({
   receipt,
   fetching,
   onRequest,
+  onCancel,
+  wait,
 }: {
   receipt?: EcrReceipt;
   fetching: boolean;
   onRequest: () => void;
+  onCancel?: () => void;
+  wait?: { remaining: number; total: number } | null;
 }) {
   if (fetching) {
+    const progress =
+      !wait || wait.total <= 0
+        ? 0
+        : Math.min(1, Math.max(0, wait.remaining / wait.total));
     return (
-      <View style={styles.receiptRow}>
-        <ActivityIndicator color={colors.primary} size="small" />
-        <Text style={styles.fieldValue}>Fetching the receipt…</Text>
+      <View>
+        <View style={styles.receiptRow}>
+          <ActivityIndicator color={colors.primary} size="small" />
+          <View style={styles.countdownCopy}>
+            <Text style={styles.fieldValue}>Fetching the receipt…</Text>
+            {wait ? (
+              <>
+                <Text style={styles.countdown}>
+                  {countdownLabel(wait.remaining)}
+                </Text>
+                <Text style={styles.countdownHint}>
+                  remaining of {wait.total} s timeout
+                </Text>
+                <View style={styles.track}>
+                  <View
+                    style={[styles.trackFill, { width: `${progress * 100}%` }]}
+                  />
+                </View>
+              </>
+            ) : null}
+          </View>
+        </View>
+        {onCancel ? (
+          <Pressable onPress={onCancel} style={styles.outlined}>
+            <Text style={styles.outlinedText}>Cancel operation</Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   }
   if (!receipt) {
     return (
       <Pressable onPress={onRequest} style={styles.outlined}>
-        <Text style={styles.outlinedText}>▦ QR receipt</Text>
+        <Text style={styles.outlinedText}>QR receipt</Text>
       </Pressable>
     );
   }
@@ -407,6 +556,22 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 8,
   },
+  countdownCopy: { flex: 1, gap: 2 },
+  countdown: {
+    color: colors.primary,
+    fontFamily: 'monospace',
+    fontSize: 22,
+    fontWeight: '600',
+  },
+  countdownHint: { color: colors.onSurfaceVariant, fontSize: 12 },
+  track: {
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: 2,
+    height: 4,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  trackFill: { backgroundColor: colors.primary, height: 4 },
   receiptBlock: { alignItems: 'center', gap: 8, marginTop: 8 },
   error: { color: colors.error, fontSize: 12 },
   rawRow: {

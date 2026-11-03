@@ -2,15 +2,19 @@
  * How the till reaches the terminal. Values match TMS `ecrMode`:
  * `usbCable` 1, `wifi` 2, `bluetooth` 3, `webService` 4, `appToApp` 5.
  *
- * `wifi` opens a TCP socket to the terminal's local IP. `ethernet` is accepted
- * as the same path. `webService` drives the terminal through the Amwal payment
- * host over REST and needs `merchantId`, `terminalId` and `environment`.
- * `usbCable` and `appToApp` are driven on Android. `bluetooth` answers with a
- * typed `unsupported` failure without sending anything. On iOS, USB cable,
- * app to app, and sign-on answer the same way.
+ * `wifi` opens a TCP socket to the terminal's local IP. `webService` drives
+ * the terminal through the Amwal payment host over REST and needs
+ * `merchantId`, `terminalId` and `environment`. `usbCable` and `appToApp` are
+ * driven on Android. `bluetooth` answers with a typed `unsupported` failure
+ * without sending anything. On iOS, USB cable and app to app answer the same
+ * way. There is no ethernet transport: a cabled IP terminal is still Wi-Fi ECR.
  */
 export type EcrTransport =
-  'wifi' | 'ethernet' | 'usbCable' | 'bluetooth' | 'webService' | 'appToApp';
+  | 'wifi'
+  | 'usbCable'
+  | 'bluetooth'
+  | 'webService'
+  | 'appToApp';
 
 /**
  * Hub deployment for Web Service ECR. URLs are resolved inside the native
@@ -58,14 +62,14 @@ export interface EcrTerminalCapabilities {
 
 export interface EcrSignOnAvailable {
   outcome: 'available';
-  merchantReferenceId: string;
+  merchantReference: string;
   capabilities: EcrTerminalCapabilities;
   raw: string;
 }
 
 export interface EcrSignOnUnavailable {
   outcome: 'unavailable';
-  merchantReferenceId: string;
+  merchantReference: string;
   reason: string;
   capabilities: EcrTerminalCapabilities;
   raw: string;
@@ -73,7 +77,7 @@ export interface EcrSignOnUnavailable {
 
 export interface EcrSignOnFailed {
   outcome: 'failed';
-  merchantReferenceId: string;
+  merchantReference: string;
   failure: EcrFailure;
 }
 
@@ -82,8 +86,9 @@ export type EcrSignOn =
 
 export interface EcrTerminalOptions {
   /**
-   * The terminal's IP address. Required for `wifi` and `ethernet`. Unused by
-   * `webService`, `usbCable`, and `appToApp`.
+   * The terminal's IP address. Required for `wifi`. Unused by `webService`
+   * and `usbCable`. For `appToApp` the only accepted value is
+   * `com.amwalpay.pos`; omit it and the terminal uses that id.
    */
   host?: string;
   serialNumber?: string;
@@ -110,7 +115,7 @@ export interface EcrFailure {
 
 export interface EcrApproved {
   outcome: 'approved';
-  merchantReferenceId: string;
+  merchantReference: string;
   amount: string;
   responseCode: string;
   rrn: string;
@@ -125,7 +130,7 @@ export interface EcrApproved {
 
 export interface EcrDeclined {
   outcome: 'declined';
-  merchantReferenceId: string;
+  merchantReference: string;
   responseCode: string;
   reason: string;
   nextStep: EcrNextStep;
@@ -137,7 +142,7 @@ export interface EcrDeclined {
 
 export interface EcrFailed {
   outcome: 'failed';
-  merchantReferenceId: string;
+  merchantReference: string;
   failure: EcrFailure;
   recovered?: EcrInquiry;
   settled: boolean;
@@ -171,21 +176,21 @@ export interface EcrTransaction {
 
 export interface EcrInquiryFound {
   outcome: 'found';
-  merchantReferenceId: string;
+  merchantReference: string;
   transaction: EcrTransaction;
   raw: string;
 }
 
 export interface EcrInquiryNotFound {
   outcome: 'notFound';
-  merchantReferenceId: string;
+  merchantReference: string;
   reason: string;
   raw: string;
 }
 
 export interface EcrInquiryFailed {
   outcome: 'failed';
-  merchantReferenceId: string;
+  merchantReference: string;
   failure: EcrFailure;
 }
 
@@ -194,30 +199,132 @@ export type EcrInquiry =
 
 export interface EcrReceiptReady {
   outcome: 'ready';
-  merchantReferenceId: string;
+  merchantReference: string;
   url: string;
   raw: string;
 }
 
 export interface EcrReceiptUnavailable {
   outcome: 'unavailable';
-  merchantReferenceId: string;
+  merchantReference: string;
   reason: string;
   raw: string;
 }
 
 export interface EcrReceiptFailed {
   outcome: 'failed';
-  merchantReferenceId: string;
+  merchantReference: string;
   failure: EcrFailure;
 }
 
 export type EcrReceipt =
   EcrReceiptReady | EcrReceiptUnavailable | EcrReceiptFailed;
 
+export interface EcrReceiptClosedIdle {
+  outcome: 'idle';
+  merchantReference: string;
+  raw: string;
+}
+
+export interface EcrReceiptClosedRefused {
+  outcome: 'refused';
+  merchantReference: string;
+  responseCode: string;
+  reason: string;
+  raw: string;
+}
+
+export interface EcrReceiptClosedFailed {
+  outcome: 'failed';
+  merchantReference: string;
+  failure: EcrFailure;
+}
+
+export type EcrReceiptClosed =
+  | EcrReceiptClosedIdle
+  | EcrReceiptClosedRefused
+  | EcrReceiptClosedFailed;
+
+export interface EcrSettlementTotal {
+  count: number;
+  amount: string;
+}
+
+export interface EcrSettlementSettled {
+  outcome: 'settled';
+  merchantReference: string;
+  batchId: string;
+  currency: string;
+  startTime: string;
+  endTime: string;
+  totalTransactions: number;
+  netAmount: string;
+  totals: Record<string, EcrSettlementTotal>;
+  raw: string;
+}
+
+export interface EcrSettlementNothingToSettle {
+  outcome: 'nothingToSettle';
+  merchantReference: string;
+  message: string;
+  raw: string;
+}
+
+export interface EcrSettlementNotSettled {
+  outcome: 'notSettled';
+  merchantReference: string;
+  responseCode: string;
+  status: string;
+  reason: string;
+  uploadedTransactions?: number;
+  raw: string;
+}
+
+export interface EcrSettlementFailed {
+  outcome: 'failed';
+  merchantReference: string;
+  failure: EcrFailure;
+}
+
+export type EcrSettlement =
+  | EcrSettlementSettled
+  | EcrSettlementNothingToSettle
+  | EcrSettlementNotSettled
+  | EcrSettlementFailed;
+
+/** App-to-app PRINT status. Kept apart from [EcrPrintOutcome.message]. */
+export type EcrPrintStatus = 'SUCCESSFUL' | 'FAILED';
+
+export interface EcrPrintOutcome {
+  status: EcrPrintStatus;
+  message: string;
+  ok: boolean;
+}
+
+/** Result of `EcrTerminal.probeReachability`. */
+export interface EcrReachability {
+  reachable: boolean;
+  /** Address side of the link. Empty for a cable with no IP. */
+  host: string;
+  /** Listener port, or 0 when the link is not a socket. */
+  port: number;
+  /** Why the probe failed. Absent when `reachable` is true. */
+  error?: string;
+  /** What to show an operator: `host:port` over Wi-Fi, the cable otherwise. */
+  endpoint: string;
+}
+
 export interface EcrReferenceOptions {
-  merchantReferenceId?: string;
+  merchantReference?: string;
   operationId?: string;
+}
+
+/** Arguments for `EcrTerminal.run`, which only accepts sale, void, and refund. */
+export interface EcrRunOptions extends EcrReferenceOptions {
+  amount?: string;
+  receiptNumber?: string;
+  transactionDate?: string;
+  originalTerminalId?: string;
 }
 
 export interface EcrOriginalTransactionOptions extends EcrReferenceOptions {
@@ -233,4 +340,12 @@ export interface EcrRefundOptions extends EcrDatedTransactionOptions {}
 
 export interface EcrInquiryByReferenceOptions extends EcrOriginalTransactionOptions {
   transactionDate?: string;
+}
+
+export interface EcrCloseReceiptOptions extends EcrReferenceOptions {
+  /**
+   * The sale, void, or refund this close refers to. Required on Web Service.
+   * Wi-Fi and USB ignore it.
+   */
+  originalMerchantReference?: string;
 }

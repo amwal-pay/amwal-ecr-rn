@@ -12,7 +12,9 @@ import {
   type EcrTerminalCapabilities,
 } from 'react-native-amwal-ecr';
 import {
+  asksSignOn,
   secureHashKeyFor,
+  terminalPlan,
   type AppSettings,
   type SavedTerminal,
 } from './model';
@@ -74,19 +76,27 @@ export default function App() {
     return () => subscription.remove();
   }, [screen]);
 
-  const open = (terminal: SavedTerminal) =>
-    new EcrTerminal({
+  const open = (terminal: SavedTerminal) => {
+    const config = {
+      port: terminal.port || 9100,
+      merchantId: terminal.merchantId,
+      terminalId: terminal.terminalId,
+      environment: settings.environment,
+      secureHashKey: secureHashKeyFor(terminal, settings),
+    };
+    if (terminal.transport === 'appToApp') {
+      return EcrTerminal.appToApp({
+        serialNumber: terminal.serialNumber,
+        config,
+      });
+    }
+    return new EcrTerminal({
       host: terminal.ipAddress,
       serialNumber: terminal.serialNumber,
       transport: terminal.transport,
-      config: {
-        port: terminal.port || 9100,
-        merchantId: terminal.merchantId,
-        terminalId: terminal.terminalId,
-        environment: settings.environment,
-        secureHashKey: secureHashKeyFor(terminal, settings),
-      },
+      config,
     });
+  };
 
   const applySignOn = (serial: string, answer: EcrSignOn) => {
     if (answer.outcome === 'available') {
@@ -119,23 +129,23 @@ export default function App() {
 
   const check = async (terminal: SavedTerminal) => {
     if (terminal.transport === 'appToApp') {
-      setSignOns((current) => {
-        const next = { ...current };
-        delete next[terminal.serialNumber];
-        return next;
-      });
-      return;
-    }
-    const key = secureHashKeyFor(terminal, settings);
-    if (!key.trim()) {
       setSignOns((current) => ({
         ...current,
         [terminal.serialNumber]: {
           kind: 'notReady',
           reason:
-            terminal.transport === 'webService'
-              ? 'Web Service signing key is not configured'
-              : 'Wi-Fi signing key is not configured',
+            'Sign-on is not used for app to app yet — start a transaction and the terminal answers with what it permits',
+        },
+      }));
+      return;
+    }
+    const plan = terminalPlan(terminal, settings);
+    if (!plan.ready) {
+      setSignOns((current) => ({
+        ...current,
+        [terminal.serialNumber]: {
+          kind: 'notReady',
+          reason: plan.issues.join('\n') || 'This terminal is not configured',
         },
       }));
       return;
@@ -228,9 +238,10 @@ export default function App() {
           [serial]: { kind: 'ready', capabilities },
         }))
       }
+      onRefresh={(terminal) => check(terminal)}
       onSelect={(terminal) => {
         setSelectedSerial(terminal.serialNumber);
-        check(terminal).catch(() => undefined);
+        if (asksSignOn(terminal)) check(terminal).catch(() => undefined);
       }}
     />
   );

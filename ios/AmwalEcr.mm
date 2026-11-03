@@ -25,6 +25,12 @@
 - (void)closeReceipt:(NSDictionary *)request
              resolver:(RCTPromiseResolveBlock)resolve
              rejecter:(RCTPromiseRejectBlock)reject;
+- (void)settlement:(NSDictionary *)request
+          resolver:(RCTPromiseResolveBlock)resolve
+          rejecter:(RCTPromiseRejectBlock)reject;
+- (void)printReceipt:(NSDictionary *)request
+            resolver:(RCTPromiseResolveBlock)resolve
+            rejecter:(RCTPromiseRejectBlock)reject;
 - (void)receipt:(NSDictionary *)request
         resolver:(RCTPromiseResolveBlock)resolve
         rejecter:(RCTPromiseRejectBlock)reject;
@@ -101,6 +107,20 @@
             reject:(RCTPromiseRejectBlock)reject
 {
   [_implementation closeReceipt:request resolver:resolve rejecter:reject];
+}
+
+- (void)settlement:(NSDictionary *)request
+          resolve:(RCTPromiseResolveBlock)resolve
+           reject:(RCTPromiseRejectBlock)reject
+{
+  [_implementation settlement:request resolver:resolve rejecter:reject];
+}
+
+- (void)printReceipt:(NSDictionary *)request
+          resolve:(RCTPromiseResolveBlock)resolve
+           reject:(RCTPromiseRejectBlock)reject
+{
+  [_implementation printReceipt:request resolver:resolve rejecter:reject];
 }
 
 - (void)receipt:(NSDictionary *)request

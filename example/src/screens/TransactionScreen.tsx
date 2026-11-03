@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import {
-  ActivityIndicator,
-  Platform,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import {
+  EcrOperation,
   EcrTerminal,
+  hasReachabilityProbe,
+  supportsCloseReceipt,
+  supportsSettlement,
+  type EcrApproved,
+  type EcrReceiptClosed,
   type EcrTerminalCapabilities,
 } from 'react-native-amwal-ecr';
 import {
@@ -18,15 +18,19 @@ import {
   OutlinedField,
   PrimaryButton,
   Screen,
+  SecondaryButton,
   TerminalStatus,
 } from '../chrome';
 import {
-  MENU,
   amountError,
+  asksSignOn,
+  countdownLabel,
   formatAmount,
   keyedDigits,
   merchantReferenceError,
   modeOf,
+  operationsFor,
+  responseTimeoutSeconds,
   terminalPlan,
   wireDate,
   unreachableMessage,
@@ -34,6 +38,7 @@ import {
   type OperationId,
   type SavedTerminal,
 } from '../model';
+import { receiptPng } from '../receiptPng';
 import { ResultDialog, type Dialog } from '../ResultDialog';
 import type { SignOnView } from '../signOn';
 import { colors } from '../theme';
@@ -44,6 +49,7 @@ export function TransactionScreen({
   selectedSerial,
   signOn,
   onSelect,
+  onRefresh,
   onOpenTerminals,
   open,
   onProfile,
@@ -53,6 +59,7 @@ export function TransactionScreen({
   selectedSerial: string | null;
   signOn: SignOnView | undefined;
   onSelect: (terminal: SavedTerminal) => void;
+  onRefresh: (terminal: SavedTerminal) => Promise<void>;
   onOpenTerminals: () => void;
   open: (terminal: SavedTerminal) => EcrTerminal;
   onProfile: (serial: string, capabilities: EcrTerminalCapabilities) => void;
@@ -60,27 +67,24 @@ export function TransactionScreen({
   const terminal = terminals.find(
     (item) => item.serialNumber === selectedSerial
   );
-  const permitted =
-    signOn?.kind === 'ready' || signOn?.kind === 'notReady'
-      ? signOn.capabilities?.permitted.map((item) => item.messageType)
-      : undefined;
-  const operations = MENU.filter(
-    (item) => !permitted?.length || permitted.includes(item.messageType)
-  );
+  const profile = terminal && asksSignOn(terminal) ? signOn : undefined;
+  const operations = operationsFor(terminal, profile);
   const [operation, setOperation] = useState<OperationId>('sale');
   const active =
     operations.find((item) => item.id === operation) ??
-    operations[0] ??
-    MENU[0]!;
+    operations[0]!;
   const [digits, setDigits] = useState('');
   const [merchantReference, setMerchantReference] = useState('');
   const [lookUpByReference, setLookUpByReference] = useState(false);
   const [originalReference, setOriginalReference] = useState('');
   const [receiptNumber, setReceiptNumber] = useState('');
   const [originalDate, setOriginalDate] = useState(() => new Date());
-  const [phase, setPhase] = useState<'checking' | 'waiting' | null>(null);
+  const [wait, setWait] = useState<Wait | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
+  const epochRef = useRef(0);
+  const flightRef = useRef<EcrOperation<unknown> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const fallback = operations[0];
@@ -89,15 +93,23 @@ export function TransactionScreen({
     }
     // Reset only when the permitted set drops the current choice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [permitted?.join('|')]);
+  }, [operations.map((item) => item.id).join('|')]);
 
   useEffect(() => {
-    if (terminal && terminal.transport !== 'appToApp' && signOn == null) {
+    if (terminal && asksSignOn(terminal) && signOn == null) {
       onSelect(terminal);
     }
-    // Ask once when this terminal becomes the selection.
+    // Ask once when this terminal becomes the selection. Web Service has no
+    // sign-on, and app to app would open the payment app unasked.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terminal?.serialNumber]);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    },
+    []
+  );
 
   const chooseType = (id: OperationId) => {
     setOperation(id);
@@ -115,7 +127,30 @@ export function TransactionScreen({
   const showDate =
     active.requiresDate && !(active.id === 'inquiry' && lookUpByReference);
   const plan = terminal ? terminalPlan(terminal, settings) : null;
-  const busy = phase != null;
+  const busy = wait != null && wait.kind !== 'fetching';
+
+  const stopWait = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setWait(null);
+  };
+
+  const startWait = (kind: Wait['kind'], total: number, reset: boolean) => {
+    setWait((current) => ({
+      kind,
+      total,
+      remaining: reset || current == null ? total : current.remaining,
+    }));
+    if (timerRef.current) return;
+    timerRef.current = setInterval(() => {
+      setWait((current) => {
+        if (current == null) return current;
+        return { ...current, remaining: Math.max(0, current.remaining - 1) };
+      });
+    }, 1000);
+  };
 
   const send = async () => {
     if (!terminal || busy) return;
@@ -137,79 +172,80 @@ export function TransactionScreen({
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
 
+    const epoch = ++epochRef.current;
     const session = open(terminal);
+    const timeout = responseTimeoutSeconds(terminal);
+    const current = () => epoch === epochRef.current;
     try {
-      const probes =
-        terminal.transport === 'wifi' ||
-        terminal.transport === 'ethernet' ||
-        (Platform.OS === 'android' &&
-          (terminal.transport === 'usbCable' ||
-            terminal.transport === 'appToApp'));
+      const probes = hasReachabilityProbe(terminal.transport);
       if (probes) {
-        setPhase('checking');
-        const reachable = await session.isReachable();
-        if (!reachable) {
+        startWait('checking', timeout, true);
+        const probe = await session.probeReachability();
+        if (!current()) return;
+        if (!probe.reachable) {
           setDialog({
             kind: 'failure',
-            message: unreachableMessage(terminal),
+            message: unreachableMessage(terminal, probe),
             terminal,
           });
           return;
         }
+      } else {
+        startWait('waiting', timeout, true);
       }
-      setPhase('waiting');
       if (
-        (signOn == null || signOn.kind === 'noAnswer') &&
-        terminal.transport !== 'appToApp'
+        asksSignOn(terminal) &&
+        (signOn == null || signOn.kind === 'noAnswer')
       ) {
-        onSelect(terminal);
+        await onRefresh(terminal);
+        if (!current()) return;
+      }
+      startWait('waiting', timeout, !probes);
+
+      if (active.id === 'inquiry') {
+        const operation = lookUpByReference
+          ? session.startInquireByReference(originalReference.trim())
+          : session.startInquire({
+              receiptNumber: receiptNumber.trim(),
+              transactionDate: wireDate(originalDate),
+            });
+        flightRef.current = operation;
+        const inquiry = await operation.result;
+        if (!current()) return;
+        if (inquiry.outcome === 'failed') {
+          setDialog({
+            kind: 'failure',
+            message: inquiry.failure.message,
+            terminal,
+          });
+          return;
+        }
+        setDialog({
+          kind: 'inquiry',
+          inquiry,
+          terminal,
+          receiptNumber: lookUpByReference ? '' : receiptNumber.trim(),
+          transactionDate: lookUpByReference ? '' : wireDate(originalDate),
+          originalTerminalId: '',
+          fetching: false,
+        });
+        return;
       }
 
-      if (active.id === 'inquiry' && lookUpByReference) {
-        const inquiry = await session.inquireByReference(
-          originalReference.trim(),
-          {
-            merchantReferenceId: originalReference.trim(),
-          }
-        );
-        setDialog({
-          kind: 'inquiry',
-          inquiry,
-          terminal,
-          receiptNumber: '',
-          transactionDate: '',
-          originalTerminalId: '',
-          fetching: false,
-        });
-        return;
-      }
-      if (active.id === 'inquiry') {
-        const inquiry = await session.inquire({
-          receiptNumber: receiptNumber.trim(),
-          transactionDate: wireDate(originalDate),
-        });
-        setDialog({
-          kind: 'inquiry',
-          inquiry,
-          terminal,
-          receiptNumber: receiptNumber.trim(),
-          transactionDate: wireDate(originalDate),
-          originalTerminalId: '',
-          fetching: false,
-        });
-        return;
-      }
-      const result =
+      const operation =
         active.id === 'sale'
-          ? await session.sale(formatAmount(digits), {
-              merchantReferenceId: merchantReference.trim(),
+          ? session.startSale(formatAmount(digits), {
+              merchantReference: merchantReference.trim(),
             })
           : active.id === 'void'
-            ? await session.voidTransaction(receiptNumber.trim())
-            : await session.refund(formatAmount(digits), {
+            ? session.startVoid(receiptNumber.trim())
+            : session.startRefund(formatAmount(digits), {
                 receiptNumber: receiptNumber.trim(),
                 transactionDate: wireDate(originalDate),
               });
+      flightRef.current = operation;
+      const result = await operation.result;
+      if (!current()) return;
       if (
         result.outcome === 'declined' &&
         result.capabilities &&
@@ -236,7 +272,7 @@ export function TransactionScreen({
         setDialog({
           kind: 'failure',
           message: result.failure.message,
-          reference: result.merchantReferenceId,
+          reference: result.merchantReference,
           terminal,
         });
         return;
@@ -251,13 +287,17 @@ export function TransactionScreen({
       }
       setDialog({ kind: 'result', result, operation: active.id, terminal });
     } catch (error) {
+      if (!current()) return;
       setDialog({
         kind: 'failure',
         message: error instanceof Error ? error.message : String(error),
         terminal,
       });
     } finally {
-      setPhase(null);
+      if (current()) {
+        flightRef.current = null;
+        stopWait();
+      }
     }
   };
 
@@ -271,13 +311,167 @@ export function TransactionScreen({
   const dismiss = () => {
     setDialog(null);
     clearEntry();
-    // The terminal leaves its receipt up until somebody dismisses it. Closing
-    // this dialog is that moment. App to app has already closed it: the
-    // answer is held until the operator leaves the receipt.
-    if (!terminal || terminal.transport === 'appToApp') return;
-    open(terminal)
-      .closeReceipt()
-      .catch(() => undefined);
+  };
+
+  const canCloseReceipt =
+    terminal != null && supportsCloseReceipt(terminal.transport);
+
+  const canSettle =
+    terminal != null &&
+    supportsSettlement(terminal.transport) &&
+    plan?.ready === true;
+
+  const closeTerminalReceipt = async () => {
+    if (!terminal || !canCloseReceipt) return;
+    let original = '';
+    if (terminal.transport === 'webService') {
+      if (
+        dialog?.kind === 'result' &&
+        (dialog.operation === 'sale' ||
+          dialog.operation === 'void' ||
+          dialog.operation === 'refund')
+      ) {
+        original = dialog.result.merchantReference;
+      }
+      if (!original.trim()) {
+        Alert.alert(
+          'Close receipt',
+          'Close receipt needs the sale / void / refund reference'
+        );
+        return;
+      }
+    }
+    try {
+      const closed = await open(terminal).closeReceipt({
+        originalMerchantReference: original,
+      });
+      Alert.alert('Close receipt', closeReceiptMessage(closed));
+    } catch (error) {
+      Alert.alert(
+        'Close receipt',
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  };
+
+  const printReceipt = async () => {
+    if (
+      !terminal ||
+      terminal.transport !== 'appToApp' ||
+      dialog?.kind !== 'result' ||
+      dialog.result.outcome !== 'approved'
+    ) {
+      return;
+    }
+    const approved = dialog.result;
+    try {
+      const outcome = await open(terminal).printReceipt(
+        receiptPng(receiptLines(approved, dialog.operation)),
+        { merchantReference: approved.merchantReference }
+      );
+      const detail = outcome.message.trim();
+      Alert.alert(
+        'Print receipt',
+        detail ? `${outcome.status}\n\n${detail}` : outcome.status
+      );
+    } catch (error) {
+      Alert.alert(
+        'FAILED',
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  };
+
+  const confirmSettlement = () => {
+    if (!terminal || !canSettle) return;
+    Alert.alert(
+      'Manual settlement',
+      `Settle ${terminal.name} now? It closes the current batch and prints the settlement receipt.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Settle',
+          onPress: () => {
+            settle().catch(() => undefined);
+          },
+        },
+      ]
+    );
+  };
+
+  const cancelOperation = () => {
+    const fetching = dialog?.kind === 'inquiry' && dialog.fetching;
+    if (wait == null && !fetching) return;
+    epochRef.current += 1;
+    const flight = flightRef.current;
+    flightRef.current = null;
+    flight?.cancel().catch(() => undefined);
+    stopWait();
+    if (fetching && dialog?.kind === 'inquiry') {
+      setDialog({ ...dialog, fetching: false });
+      return;
+    }
+    setDialog({
+      kind: 'failure',
+      message: 'Operation cancelled',
+      terminal,
+    });
+  };
+
+  const settle = async () => {
+    if (!terminal || busy) return;
+    const epoch = ++epochRef.current;
+    const current = () => epoch === epochRef.current;
+    const timeout = responseTimeoutSeconds(terminal);
+    const session = open(terminal);
+    try {
+      if (hasReachabilityProbe(terminal.transport)) {
+        startWait('checking', timeout, true);
+        const probe = await session.probeReachability();
+        if (!current()) return;
+        if (!probe.reachable) {
+          setDialog({
+            kind: 'failure',
+            message: unreachableMessage(terminal, probe),
+            terminal,
+          });
+          return;
+        }
+      }
+      if (
+        asksSignOn(terminal) &&
+        (signOn == null || signOn.kind === 'noAnswer')
+      ) {
+        await onRefresh(terminal);
+        if (!current()) return;
+      }
+      startWait('waiting', timeout, true);
+      const operation = session.startSettlement();
+      flightRef.current = operation;
+      const settlement = await operation.result;
+      if (!current()) return;
+      if (settlement.outcome === 'failed') {
+        setDialog({
+          kind: 'failure',
+          message: settlement.failure.message,
+          terminal,
+        });
+        return;
+      }
+      setDialog({ kind: 'settlement', settlement, terminal });
+    } catch (error) {
+      if (!current()) return;
+      setDialog({
+        kind: 'failure',
+        message: error instanceof Error ? error.message : String(error),
+        terminal,
+      });
+    } finally {
+      if (current()) {
+        flightRef.current = null;
+        stopWait();
+      }
+    }
   };
 
   return (
@@ -337,8 +531,8 @@ export function TransactionScreen({
           <OutlinedField
             editable={!busy}
             error={errors.originalReference}
-            hint="The reference the transaction was sent with"
-            label="Merchant reference"
+            hint="Reference of the transaction to look up. This inquiry gets its own new merchant reference."
+            label="Original merchant reference"
             value={originalReference}
             onChangeText={(value) => setOriginalReference(value.slice(0, 32))}
           />
@@ -372,14 +566,12 @@ export function TransactionScreen({
             <Dropdown
               enabled={!busy}
               label="POS terminal"
-              optionLabel={(item) => item.name}
+              optionLabel={(item) => `${item.name} (${item.serialNumber})`}
               options={terminals}
               selected={terminal}
               onSelected={onSelect}
             />
-            <TerminalStatus
-              signOn={terminal?.transport === 'appToApp' ? undefined : signOn}
-            />
+            <TerminalStatus signOn={profile} />
             {terminal && plan ? (
               <ConfigCard plan={plan} terminal={terminal} />
             ) : null}
@@ -396,38 +588,103 @@ export function TransactionScreen({
             send().catch(() => undefined);
           }}
         />
-        {phase ? (
-          <View style={styles.waiting}>
-            <ActivityIndicator color={colors.primary} />
-            <Text style={styles.waitingText}>
-              {phase === 'checking'
+        {canSettle ? (
+          <SecondaryButton
+            enabled={!busy && plan?.ready === true}
+            label="Manual settlement"
+            onPress={confirmSettlement}
+          />
+        ) : null}
+        {wait && wait.kind !== 'fetching' ? (
+          <Countdown
+            status={
+              wait.kind === 'checking'
                 ? 'Checking the terminal…'
-                : 'Waiting for the POS terminal…'}
-            </Text>
-          </View>
+                : 'Waiting for the POS terminal…'
+            }
+            total={wait.total}
+            remaining={wait.remaining}
+          />
+        ) : null}
+        {wait && wait.kind !== 'fetching' ? (
+          <SecondaryButton label="Cancel operation" onPress={cancelOperation} />
         ) : null}
       </FormScroll>
       <ResultDialog
         dialog={dialog}
+        onPrint={
+          terminal?.transport === 'appToApp' &&
+          dialog?.kind === 'result' &&
+          dialog.result.outcome === 'approved'
+            ? () => {
+                printReceipt().catch(() => undefined);
+              }
+            : undefined
+        }
+        onCancelFetch={
+          dialog?.kind === 'inquiry' && dialog.fetching
+            ? cancelOperation
+            : undefined
+        }
+        wait={wait?.kind === 'fetching' ? wait : null}
+        onCloseReceipt={
+          canCloseReceipt &&
+          (dialog?.kind === 'result' || dialog?.kind === 'settlement')
+            ? () => {
+                closeTerminalReceipt().catch(() => undefined);
+              }
+            : undefined
+        }
         onDismiss={dismiss}
         onInquire={async (reference) => {
-          if (!terminal) return;
+          if (!terminal || busy) return;
+          const epoch = ++epochRef.current;
+          const still = () => epoch === epochRef.current;
           setDialog(null);
-          const inquiry = await open(terminal).inquireByReference(reference);
-          setDialog({
-            kind: 'inquiry',
-            inquiry,
-            terminal,
-            receiptNumber: '',
-            transactionDate: '',
-            originalTerminalId: '',
-            fetching: false,
-          });
+          startWait('waiting', responseTimeoutSeconds(terminal), true);
+          try {
+            const operation = open(terminal).startInquireByReference(reference);
+            flightRef.current = operation;
+            const inquiry = await operation.result;
+            if (!still()) return;
+            if (inquiry.outcome === 'failed') {
+              setDialog({
+                kind: 'failure',
+                message: inquiry.failure.message,
+                terminal,
+              });
+              return;
+            }
+            setDialog({
+              kind: 'inquiry',
+              inquiry,
+              terminal,
+              receiptNumber: '',
+              transactionDate: '',
+              originalTerminalId: '',
+              fetching: false,
+            });
+          } catch (error) {
+            if (!still()) return;
+            setDialog({
+              kind: 'failure',
+              message: error instanceof Error ? error.message : String(error),
+              terminal,
+            });
+          } finally {
+            if (still()) {
+              flightRef.current = null;
+              stopWait();
+            }
+          }
         }}
         onReceipt={async () => {
-          if (dialog?.kind !== 'inquiry') return;
+          if (dialog?.kind !== 'inquiry' || !terminal) return;
+          const epoch = ++epochRef.current;
+          const still = () => epoch === epochRef.current;
           const current = dialog;
           setDialog({ ...current, fetching: true });
+          startWait('fetching', responseTimeoutSeconds(terminal), true);
           const found =
             current.inquiry.outcome === 'found'
               ? current.inquiry.transaction
@@ -437,19 +694,23 @@ export function TransactionScreen({
             ? found.transactionTime.replace(/\D/g, '').slice(0, 8)
             : current.transactionDate;
           try {
-            const receipt = await open(current.terminal).receipt({
+            const operation = open(current.terminal).startReceipt({
               receiptNumber: number,
               transactionDate: date || wireDate(new Date()),
               originalTerminalId: current.originalTerminalId,
             });
+            flightRef.current = operation;
+            const receipt = await operation.result;
+            if (!still()) return;
             setDialog({ ...current, fetching: false, receipt });
           } catch (error) {
+            if (!still()) return;
             setDialog({
               ...current,
               fetching: false,
               receipt: {
                 outcome: 'failed',
-                merchantReferenceId: '',
+                merchantReference: '',
                 failure: {
                   kind: 'malformed',
                   message:
@@ -458,11 +719,39 @@ export function TransactionScreen({
                 },
               },
             });
+          } finally {
+            if (still()) {
+              flightRef.current = null;
+              stopWait();
+            }
           }
         }}
       />
     </Screen>
   );
+}
+
+function receiptLines(result: EcrApproved, operation: string): string[] {
+  return [
+    'AMWAL ECR',
+    operation,
+    result.amount ? `OMR ${result.amount}` : '',
+    result.authCode ? `AUTH ${result.authCode}` : '',
+    result.rrn ? `RRN ${result.rrn}` : '',
+    result.maskedPan ? `CARD ${result.maskedPan}` : '',
+    result.merchantReference ? `REF ${result.merchantReference}` : '',
+  ].filter((line) => line.length > 0);
+}
+
+function closeReceiptMessage(closed: EcrReceiptClosed): string {
+  switch (closed.outcome) {
+    case 'idle':
+      return 'Terminal is back on its idle screen';
+    case 'refused':
+      return `Terminal refused: ${closed.reason}`;
+    case 'failed':
+      return `Could not reach the terminal: ${closed.failure.message}`;
+  }
 }
 
 function ConfigCard({
@@ -515,11 +804,60 @@ interface FieldErrors {
   receiptNumber?: string | null;
 }
 
+type Wait = {
+  kind: 'checking' | 'waiting' | 'fetching';
+  remaining: number;
+  total: number;
+};
+
+function Countdown({
+  status,
+  remaining,
+  total,
+}: {
+  status: string;
+  remaining: number;
+  total: number;
+}) {
+  const progress = total <= 0 ? 0 : Math.min(1, Math.max(0, remaining / total));
+  return (
+    <View style={styles.waiting}>
+      <ActivityIndicator color={colors.primary} />
+      <View style={styles.countdownCopy}>
+        <Text style={styles.waitingText}>{status}</Text>
+        <Text style={styles.countdown}>{countdownLabel(remaining)}</Text>
+        <Text style={styles.countdownHint}>
+          remaining of {total} s timeout
+        </Text>
+        <View style={styles.track}>
+          <View style={[styles.trackFill, { width: `${progress * 100}%` }]} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   pad: { gap: 16, padding: 16, paddingBottom: 32 },
   empty: { color: colors.onSurface, fontSize: 16 },
   waiting: { alignItems: 'center', flexDirection: 'row', gap: 12 },
   waitingText: { color: colors.onSurface, fontSize: 16 },
+  countdownCopy: { flex: 1, gap: 2 },
+  countdown: {
+    color: colors.primary,
+    fontFamily: 'monospace',
+    fontSize: 28,
+    fontWeight: '600',
+  },
+  countdownHint: { color: colors.onSurfaceVariant, fontSize: 12 },
+  track: {
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: 2,
+    height: 4,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  trackFill: { backgroundColor: colors.primary, height: 4 },
   config: { borderRadius: 12, gap: 4, padding: 12 },
   configReady: { backgroundColor: colors.surfaceVariant },
   configMissing: { backgroundColor: 'rgba(249, 222, 220, 0.7)' },

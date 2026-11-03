@@ -12,17 +12,11 @@ package resolves `ecr-sdk` and `AmwalECR`, the same way `amwal_ecr` does.
 | Android | `android/gradle.properties` | `example/android/gradle.properties` |
 | iOS | `ios/ecr_sdk.properties` | `example/ios/ecr_sdk.properties` |
 
-The package defaults to the published SDKs (`maven` / `cocoapods`). On Android,
-Gradle reads the library module's own `android/gradle.properties` in preference
-to the example's, so the example's `ecrSdkDependency=project` does not take
-effect by itself. Pass it on the command line to build the example against the
-local `ECR-simulator`:
-
-```bash
-cd example
-npx react-native run-android --extra-params "-PecrSdkDependency=project"
-# or: cd android && ./gradlew :app:assembleDebug -PecrSdkDependency=project
-```
+The package defaults to the published SDKs (`maven` / `cocoapods`). The
+example's `android/gradle.properties` wins over the library file, so the
+checked-in example builds the sibling `ECR-simulator` module. Set
+`ecrSdkDependency=maven` there to use Maven Central. A one-off override is
+`-PecrSdkDependency=maven`.
 
 The build log states which source was used: "Using ECR SDK from project module
 :ecr-sdk" or "from Maven".

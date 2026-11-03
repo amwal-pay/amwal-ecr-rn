@@ -132,9 +132,9 @@ export function TerminalEditScreen({
         ) : null}
         {draft.transport === 'appToApp' ? (
           <Text style={styles.hint}>
-            The terminal is this device. There is no address: the transaction is
-            handed to the Amwal payment app installed here, and the serial
-            number still has to be the one that app drives.
+            The terminal is this device. There is nothing to address: the
+            transaction is handed to the Amwal payment app (com.amwalpay.pos),
+            and the serial number still has to be the one that app drives.
           </Text>
         ) : null}
         <PrimaryButton

@@ -19,6 +19,10 @@ describe('native outcome normalization', () => {
 
     expect(decline.outcome).toBe('declined');
     expect(decline.outcomeIsUnknown).toBe(false);
+    if (decline.outcome === 'declined') {
+      expect(decline.merchantReference).toBe('ORDER-1');
+    }
+    expect(decline).not.toHaveProperty('merchantReferenceId');
   });
 
   test('marks response code 91 as unknown and requiring inquiry', () => {

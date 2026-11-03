@@ -5,10 +5,13 @@ import com.amwalpay.ecr.EcrEnvironment
 import com.amwalpay.ecr.EcrLink
 import com.amwalpay.ecr.EcrLogger
 import com.amwalpay.ecr.EcrOpenedSession
+import com.amwalpay.ecr.EcrReachability
 import com.amwalpay.ecr.EcrSessions
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.WritableMap
 import com.facebook.react.module.annotations.ReactModule
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
@@ -29,22 +32,25 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private val running = ConcurrentHashMap<String, RunningOperation>()
   private val paymentAppResults = PaymentAppResults()
+  private val printResults = PaymentAppPrintResults()
 
   override fun initialize() {
     super.initialize()
     reactApplicationContext.addActivityEventListener(paymentAppResults)
+    reactApplicationContext.addActivityEventListener(printResults)
   }
 
   override fun isReachable(request: ReadableMap, promise: Promise) {
     val call = parse(request, promise) ?: return
     // Web Service has no pre-flight probe. Wi-Fi, USB, and app to app do.
     if (call.isWebService || !call.isSupportedTransport) {
-      promise.resolve(false)
+      promise.resolve(unreachableMap(call))
       return
     }
     scope.launch {
       try {
-        promise.resolve(call.session.probeReachability()?.reachable == true)
+        val probe = call.session.probeReachability()
+        promise.resolve(if (probe == null) unreachableMap(call) else reachabilityMap(probe))
       } catch (error: IllegalArgumentException) {
         promise.reject(ECR_INVALID_ARGUMENT, error.message ?: "Invalid ECR arguments", error)
       } catch (error: Exception) {
@@ -132,27 +138,95 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
 
   override fun closeReceipt(request: ReadableMap, promise: Promise) {
     run(request, promise) { call ->
-      if (!call.supportsSignOn) {
+      if (!call.supportsCloseReceipt) {
         EcrMapping.failedResult(
           merchantReferenceId = call.merchantReferenceId,
           kind = EcrMapping.UNSUPPORTED,
-          message = "Closing the receipt is only supported over Wi-Fi and USB cable.",
+          message = "Closing the receipt is not supported over this transport",
         )
       } else {
-        EcrMapping.receiptClosed(call.session.closeReceipt(call.merchantReferenceId))
+        EcrMapping.receiptClosed(
+          call.session.closeReceipt(
+            merchantReference = call.merchantReferenceId,
+            originalMerchantReference = call.originalMerchantReference,
+          ),
+        )
+      }
+    }
+  }
+
+  override fun settlement(request: ReadableMap, promise: Promise) {
+    run(request, promise) { call ->
+      if (!call.supportsSettlement) {
+        EcrMapping.failedResult(
+          merchantReferenceId = call.merchantReferenceId,
+          kind = EcrMapping.UNSUPPORTED,
+          message = "Settlement is not supported over this transport",
+        )
+      } else {
+        EcrMapping.settlement(call.session.settlement(call.merchantReferenceId))
+      }
+    }
+  }
+
+  override fun printReceipt(request: ReadableMap, promise: Promise) {
+    val call = parse(request, promise) ?: return
+    if (!call.isAppToApp) {
+      promise.resolve(
+        PrintOutcome.failed(
+          "Print is only available over app to app. Nothing was sent.",
+        ).toMap(),
+      )
+      return
+    }
+    val image = call.receiptImage
+    val imageError = PaymentAppPrint.validatePrintImage(image)
+    if (imageError != null) {
+      promise.resolve(PrintOutcome.failed(imageError).toMap())
+      return
+    }
+    val activity = reactApplicationContext.currentActivity
+    if (activity == null) {
+      promise.resolve(
+        PrintOutcome.failed(
+          "There is no foreground Activity to start the payment app from",
+        ).toMap(),
+      )
+      return
+    }
+    scope.launch(Dispatchers.IO) {
+      try {
+        val outcome = PaymentAppPrint.exchange(
+          activity = activity,
+          results = printResults,
+          merchantReference = call.merchantReferenceId,
+          imagePng = image,
+          timeout = call.responseTimeout,
+        )
+        promise.resolve(outcome.toMap())
+      } catch (error: Exception) {
+        promise.reject(ECR_INTERNAL, error.message ?: "Print failed", error)
       }
     }
   }
 
   override fun receipt(request: ReadableMap, promise: Promise) {
     run(request, promise) { call ->
-      EcrMapping.receipt(
-        call.session.receipt(
-          receiptNumber = call.requiredReceiptNumber("A receipt"),
-          transactionDate = call.transactionDate,
-          originalTerminalId = call.originalTerminalId,
-        ),
-      )
+      if (!call.supportsReceipt) {
+        EcrMapping.failedResult(
+          merchantReferenceId = call.merchantReferenceId,
+          kind = EcrMapping.UNSUPPORTED,
+          message = "Receipt fetch is not supported over this transport",
+        )
+      } else {
+        EcrMapping.receipt(
+          call.session.receipt(
+            receiptNumber = call.requiredReceiptNumber("A receipt"),
+            transactionDate = call.transactionDate,
+            originalTerminalId = call.originalTerminalId,
+          ),
+        )
+      }
     }
   }
 
@@ -188,6 +262,7 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
     }
     running.clear()
     reactApplicationContext.removeActivityEventListener(paymentAppResults)
+    reactApplicationContext.removeActivityEventListener(printResults)
     scope.cancel()
     super.invalidate()
   }
@@ -274,13 +349,24 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
     val transactionDate = raw.optionalString("transactionDate")
     val originalTerminalId = raw.optionalString("originalTerminalId")
     val merchantReferenceId = raw.optionalString("merchantReferenceId")
+    val originalMerchantReference = raw.optionalString("originalMerchantReference")
+    val responseTimeout = raw.responseTimeout()
+    val receiptImage: ByteArray
+      get() {
+        val encoded = raw.optionalString("receiptImageBase64")
+        if (encoded.isBlank()) return ByteArray(0)
+        return android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+      }
     private val config = raw.config()
 
-    val isIpTransport get() = transport == "wifi" || transport == "ethernet"
+    val isIpTransport get() = transport == "wifi"
     val isWebService get() = transport == "webService" || transport == "web_service"
     val isUsbCable get() = transport == "usbCable" || transport == "usb_cable"
     val isAppToApp get() = transport == "appToApp" || transport == "app_to_app"
     val supportsSignOn get() = isIpTransport || isUsbCable
+    val supportsReceipt get() = isIpTransport || isUsbCable || isAppToApp
+    val supportsCloseReceipt get() = isIpTransport || isUsbCable || isWebService
+    val supportsSettlement get() = supportsCloseReceipt || isAppToApp
     val isSupportedTransport get() = isIpTransport || isWebService || isUsbCable || isAppToApp
 
     /**
@@ -350,6 +436,25 @@ class AmwalEcrModule(reactContext: ReactApplicationContext) :
       }
   }
 
+  private fun unreachableMap(call: Call): WritableMap {
+    val endpoint = if (call.host.isEmpty()) call.transport else call.host
+    return Arguments.createMap().apply {
+      putBoolean("reachable", false)
+      putString("host", call.host)
+      putInt("port", 0)
+      putString("endpoint", endpoint)
+    }
+  }
+
+  private fun reachabilityMap(probe: EcrReachability): WritableMap =
+    Arguments.createMap().apply {
+      putBoolean("reachable", probe.reachable)
+      putString("host", probe.host)
+      putInt("port", probe.port)
+      putString("endpoint", probe.endpoint)
+      probe.error?.let { putString("error", it) }
+    }
+
   companion object {
     const val NAME = NativeAmwalEcrSpec.NAME
     private const val ECR_INVALID_ARGUMENT = "ECR_INVALID_ARGUMENT"
@@ -368,6 +473,16 @@ private fun ReadableMap.requiredString(key: String): String {
 
 private fun ReadableMap.optionalString(key: String): String =
   if (hasKey(key) && !isNull(key)) getString(key).orEmpty() else ""
+
+private fun ReadableMap.responseTimeout(): kotlin.time.Duration {
+  val source = if (hasKey("config") && !isNull("config")) getMap("config") else null
+  val ms = if (source != null && source.hasKey("responseTimeoutMs")) {
+    source.getDouble("responseTimeoutMs").toLong()
+  } else {
+    120_000L
+  }
+  return ms.milliseconds
+}
 
 private fun ReadableMap.config(): EcrConfig {
   val source = if (hasKey("config") && !isNull("config")) getMap("config") else null

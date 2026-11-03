@@ -1,9 +1,41 @@
 export { EcrOperation } from './EcrOperation';
 export { EcrTerminal } from './EcrTerminal';
 export {
+  ECR_PRINTER_MAX_BYTES,
+  ECR_PRINTER_WIDTH,
+  validatePrintImage,
+} from './printImage';
+export {
+  EcrResponseCode,
+  isTerminalGeneratedResponseCode,
+  responseCodeLeavesOutcomeUnknown,
+} from './responseCode';
+export {
+  ECR_MENU_OPTIONS,
+  ECR_TRANSACTION_TYPES,
+  transactionTypeMovesMoney,
+} from './transactionType';
+export type { EcrTransactionType, EcrTransactionTypeId } from './transactionType';
+export {
+  PAYMENT_APP_PACKAGE,
+  hasReachabilityProbe,
+  isIpTransport,
+  isTransportSupported,
+  supportsCloseReceipt,
+  supportsReceipt,
+  supportsSettlement,
+  supportsSignOn,
+  transportFromWireValue,
+  transportWireValue,
+} from './transport';
+export { displayMessageFromRaw } from './wireResponse';
+export {
   normalizeInquiry,
+  normalizeReachability,
   normalizeReceipt,
+  normalizeReceiptClosed,
   normalizeResult,
+  normalizeSettlement,
   normalizeSignOn,
 } from './normalize';
 export type {
@@ -22,11 +54,25 @@ export type {
   EcrInquiryNotFound,
   EcrNextStep,
   EcrOriginalTransactionOptions,
+  EcrReachability,
   EcrReceipt,
+  EcrReceiptClosed,
+  EcrReceiptClosedFailed,
+  EcrReceiptClosedIdle,
+  EcrReceiptClosedRefused,
   EcrReceiptFailed,
   EcrReceiptReady,
   EcrReceiptUnavailable,
+  EcrCloseReceiptOptions,
+  EcrSettlement,
+  EcrSettlementFailed,
+  EcrSettlementNothingToSettle,
+  EcrSettlementNotSettled,
+  EcrSettlementSettled,
+  EcrSettlementTotal,
   EcrPermittedTransaction,
+  EcrPrintOutcome,
+  EcrPrintStatus,
   EcrReferenceOptions,
   EcrSignOn,
   EcrSignOnAvailable,
@@ -34,6 +80,7 @@ export type {
   EcrSignOnUnavailable,
   EcrRefundOptions,
   EcrResult,
+  EcrRunOptions,
   EcrTerminalCapabilities,
   EcrTerminalOptions,
   EcrTransaction,

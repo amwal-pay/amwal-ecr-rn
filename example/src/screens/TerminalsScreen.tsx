@@ -81,9 +81,9 @@ export function TerminalsScreen({
       </FormScroll>
       {pending ? (
         <ConfirmDialog
-          confirmLabel="Delete"
-          message={`Delete “${pending.name}”? This cannot be undone.`}
-          title="Delete terminal"
+          confirmLabel="Remove"
+          message={`Remove ${pending.name} (${pending.serialNumber})?`}
+          title="Remove terminal"
           onCancel={() => setPending(null)}
           onConfirm={() => {
             onDelete(pending.serialNumber);
@@ -105,10 +105,10 @@ function SettingsCards({
   return (
     <View style={styles.settings}>
       <SurfaceCard>
-        <Text style={styles.cardTitle}>Wi‑Fi settings</Text>
+        <Text style={styles.cardTitle}>Wi‑Fi / USB cable settings</Text>
         <Text style={styles.caption}>
-          Signing key for Wi‑Fi, USB cable, and Bluetooth ECR (sorted key=value
-          HMAC).
+          Signing key for Wi‑Fi, USB cable, and Bluetooth ECR. USB cable is
+          Android-only.
         </Text>
         <HashKeyField
           label="Wi-Fi/CABLE secure hash key"
@@ -121,8 +121,7 @@ function SettingsCards({
       <SurfaceCard>
         <Text style={styles.cardTitle}>Web Service settings</Text>
         <Text style={styles.caption}>
-          Target environment and signing key for Web Service ECR (JSON body
-          HMAC).
+          Environment and signing key for REST / Hub ECR.
         </Text>
         {ENVIRONMENTS.map((environment) => (
           <RadioRow
@@ -160,7 +159,7 @@ function HashKeyField({
       autoCapitalize="none"
       error={
         invalid
-          ? 'Must be an even-length hex string of at least 16 characters'
+          ? 'Enter an even-length hex string of at least 16 characters'
           : null
       }
       keyboardType="ascii-capable"
@@ -198,18 +197,14 @@ function TerminalCard({
   return (
     <SurfaceCard>
       <View style={styles.nameRow}>
-        <SignOnDot
-          signOn={terminal.transport === 'appToApp' ? undefined : signOn}
-        />
+        <SignOnDot signOn={signOn} />
         <Text style={styles.name}>{terminal.name}</Text>
       </View>
       <Text style={styles.mode}>
         {modeOf(terminal.transport).label}
         {reported ? ` · terminal reports ${reported}` : ''}
       </Text>
-      {terminal.transport === 'appToApp' ? null : (
-        <SignOnSummary signOn={signOn} />
-      )}
+      <SignOnSummary signOn={signOn} />
       <Text style={styles.mono}>S/N {terminal.serialNumber}</Text>
       <Text style={styles.mono}>{connectionSummary(terminal)}</Text>
       <View style={styles.actions}>

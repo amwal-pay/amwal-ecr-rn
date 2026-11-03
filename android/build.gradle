@@ -46,10 +46,33 @@ android {
   }
 }
 
-def ecrSdkDependency = (findProperty("ecrSdkDependency") ?: "maven").toString().trim()
-def ecrSdkVersion = (findProperty("ecrSdkVersion") ?: "1.0.6").toString().trim()
-def ecrSdkJarPath = (findProperty("ecrSdkJarPath")
-        ?: "../../ECR-simulator/ecr-sdk/build/libs/ecr-sdk-${ecrSdkVersion}.jar").toString().trim()
+// The app's android/gradle.properties wins over this library's file.
+//   1. -PecrSdkDependency= on the Gradle command
+//   2. the app's android/gradle.properties
+//   3. this library's android/gradle.properties
+def ecrSdkValue = { String key, String fallback ->
+    def fromCommand = gradle.startParameter.projectProperties.get(key)
+    if (fromCommand != null && !fromCommand.toString().trim().isEmpty()) {
+        return fromCommand.toString().trim()
+    }
+    def appFile = rootProject.file("gradle.properties")
+    if (rootProject != project && appFile.exists()) {
+        def appProps = new Properties()
+        appFile.withInputStream { appProps.load(it) }
+        def fromApp = appProps.getProperty(key)
+        if (fromApp != null && !fromApp.trim().isEmpty()) {
+            return fromApp.trim()
+        }
+    }
+    def fromLibrary = findProperty(key)
+    return (fromLibrary != null ? fromLibrary.toString() : fallback).trim()
+}
+
+def ecrSdkDependency = ecrSdkValue("ecrSdkDependency", "maven")
+def ecrSdkVersion = ecrSdkValue("ecrSdkVersion", "1.0.11")
+def ecrSdkJarPath = ecrSdkValue(
+        "ecrSdkJarPath",
+        "../../ECR-simulator/ecr-sdk/build/libs/ecr-sdk-${ecrSdkVersion}.jar")
 
 repositories {
   google()

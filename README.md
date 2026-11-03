@@ -2,7 +2,7 @@
 
 `react-native-amwal-ecr` drives an Amwal POS terminal from a React Native till on Android and iOS: sale, void, refund, inquiry, e-receipt, close receipt, and sign-on. Wi-Fi uses the terminal's ECR port. On Android, USB uses the cable and app to app hands the request to the payment app on the same device. Web Service uses HTTPS to the Amwal Hub. Card data stays on the terminal.
 
-Package `react-native-amwal-ecr` **0.2.0**. Open one terminal, call the operation, then read the result. The package is a typed bridge over the native Amwal ECR SDKs, used unchanged: `com.amwal-pay:ecr-sdk` **1.0.6** on Android and `AmwalECR` **~> 0.2.1** on iOS.
+Package `react-native-amwal-ecr` **0.3.0**. Open one terminal, call the operation, then read the result. The package is a typed bridge over the native Amwal ECR SDKs, used unchanged: `com.amwal-pay:ecr-sdk` **1.0.11** on Android and `AmwalECR` **~> 0.3.0** on iOS.
 
 ## Install
 
@@ -89,7 +89,7 @@ const terminal = new EcrTerminal({
 
 ## Operations
 
-Amounts are plain decimal strings in major units (`'1.234'`), never a JavaScript number. Anything else throws `TypeError`. `merchantReferenceId` names this attempt. Save it before the call. Leave it blank and the SDK generates one and returns it on the result.
+Amounts are plain decimal strings in major units (`'1.234'`), never a JavaScript number. Anything else throws `TypeError`. `merchantReference` names this attempt. Save it before the call. Leave it blank and the SDK generates one and returns it on the result.
 
 Every operation also has a `start…` form that returns an `EcrOperation` with `cancel()` and `result`. Cancelling stops your wait; it does not stop the terminal, and a cancelled sale is an unknown outcome.
 
@@ -101,7 +101,7 @@ The cardholder presents the card on the terminal.
 const reference = 'ORDER-1001-1';
 save(reference);
 
-const result = await terminal.sale('1.234', { merchantReferenceId: reference });
+const result = await terminal.sale('1.234', { merchantReference: reference });
 ```
 
 Read `result` with the `switch` in [Read the result](#read-the-result).
@@ -113,7 +113,7 @@ Cancels an earlier transaction for its full amount. No card. The first argument 
 ```tsx
 const result = await terminal.voidTransaction(stan, {
   originalTerminalId: '',
-  merchantReferenceId: 'ORDER-1001-V1',
+  merchantReference: 'ORDER-1001-V1',
 });
 ```
 
@@ -126,7 +126,7 @@ const result = await terminal.refund('1.000', {
   receiptNumber: stan,
   transactionDate: '20261019',
   originalTerminalId: '',
-  merchantReferenceId: 'ORDER-1001-R1',
+  merchantReference: 'ORDER-1001-R1',
 });
 ```
 
@@ -168,10 +168,12 @@ On Web Service there is no receipt URL to return.
 
 <a id="close-receipt"></a>
 
-Wi-Fi on Android and iOS, USB on Android. Asks the terminal to leave the receipt screen and return to idle. Call it from the till's Close receipt action when the cashier is finished. Sale, void, refund, and dismissing a dialog do not send it. Safe to repeat: `idle` means the terminal is idle, whether a receipt was up or not.
+Wi-Fi and USB send `CLOSE_RECEIPT`. Web Service posts `/Ecr/closeReceipt` and needs the sale, void, or refund reference. Call it from the till's Close receipt action when the cashier is finished. Sale, void, refund, and dismissing a dialog do not send it. Safe to repeat: `idle` means the terminal is idle, whether a receipt was up or not.
 
 ```tsx
-const closed: any = await terminal.closeReceipt();
+const closed = await terminal.closeReceipt({
+  originalMerchantReference: saleReference, // Web Service; Wi-Fi ignores it
+});
 
 switch (closed.outcome) {
   case 'idle':
@@ -185,13 +187,49 @@ switch (closed.outcome) {
 }
 ```
 
-Over app to app and Web Service the call answers `failed` with `unsupported`, without sending anything: app to app has already closed the receipt by the time the till has its answer, and over Web Service the terminal is not on this counter.
+App to app answers `failed` with `unsupported` and sends nothing: the receipt is already closed when the till has its answer. A Web Service close with no sale, void, or refund reference answers `failed` and sends nothing.
 
 ### Settlement
 
 <a id="settlement"></a>
 
-Not in this package yet. The terminal settles its batch from a till over Wi-Fi, USB, app to app, and Web Service, and the [Kotlin SDK](https://github.com/amwal-pay/ECR-simulator/blob/main/ecr-sdk/README.md#settlement) from 1.0.11 sends it over Wi-Fi, USB, and app to app. `react-native-amwal-ecr` 0.2.0 has no settlement call; settle from the terminal's merchant menu.
+Asks the terminal to settle its current batch. Confirm with the cashier first: the terminal starts at once and does not ask again. Wi-Fi, USB, app to app, and Web Service. Web Service posts `/Ecr/settle`. iOS drives Wi-Fi and Web Service; USB and app to app answer `unsupported` there.
+
+```tsx
+const settlement = await terminal.settlement();
+
+switch (settlement.outcome) {
+  case 'settled':
+    show(settlement.batchId, settlement.netAmount, settlement.totals);
+    break;
+  case 'nothingToSettle':
+    show(settlement.message);
+    break;
+  case 'notSettled':
+    show(settlement.status, settlement.reason);
+    break;
+  case 'failed':
+    show(settlement.failure.message);
+    break;
+}
+```
+
+Amounts in `netAmount` and each total are major units (`'12.500'`). `totals` is keyed by `SALE`, `REFUND`, `VOID`, `PRE_AUTH`, and `CAPTURE`.
+
+### Print receipt
+
+<a id="print-receipt"></a>
+
+App to app on Android only. Sends the till's own receipt image to `com.amwalpay.pos` (`com.amwalpay.pos.ecr.PRINT`). The image must be 384 px wide and at most 15 MB. Wi-Fi, USB, Web Service, and iOS answer `FAILED` and send nothing. `status` and `message` stay separate.
+
+```tsx
+const outcome = await terminal.printReceipt(imagePng, {
+  merchantReference: approved.merchantReference,
+});
+
+show(outcome.status);   // SUCCESSFUL | FAILED
+show(outcome.message);  // the payment app's own words, on their own line
+```
 
 ### Sign-on
 
@@ -219,13 +257,13 @@ Over app to app and Web Service it answers without sending anything. A later dec
 
 ### Reachability
 
-Wi-Fi, before a sale. Proves the port answers. It does not prove the terminal is idle.
+Wi-Fi, USB cable, and app to app, before a sale. Wi-Fi proves the port answers, USB proves the cable is attached, and app to app proves the payment app on this device will accept a request. None of them prove the terminal is idle.
 
 ```tsx
 if (!(await terminal.isReachable())) show('The terminal is not reachable');
 ```
 
-`probeTimeoutMs` is 3 seconds. `isReachable()` resolves `false` for every transport that has no local listener to probe, including Web Service.
+`probeTimeoutMs` is 3 seconds. `probeReachability()` returns the host, port, endpoint, and the link error. `isReachable()` is that result's `reachable` flag. Web Service and Bluetooth answer `reachable: false` without a probe. On iOS, USB and app to app do the same: those channels are Android only.
 
 ## Read the result
 
@@ -236,18 +274,18 @@ if (!(await terminal.isReachable())) show('The terminal is not reachable');
 ```tsx
 switch (result.outcome) {
   case 'approved':
-    record(result.merchantReferenceId, result.amount, result.rrn, result.authCode);
+    record(result.merchantReference, result.amount, result.rrn, result.authCode);
     if (result.partialApproval) collectBalance(result.requestedAmount, result.amount);
     break;
 
   case 'declined':
-    if (result.outcomeIsUnknown) markUnresolved(result.merchantReferenceId);   // 91
+    if (result.outcomeIsUnknown) markUnresolved(result.merchantReference);   // 91
     else show(result.reason);
     break;
 
   case 'failed':
     if (result.settled && result.recovered?.outcome === 'found') apply(result.recovered.transaction);
-    else if (result.outcomeIsUnknown) markUnresolved(result.merchantReferenceId);
+    else if (result.outcomeIsUnknown) markUnresolved(result.merchantReference);
     else show(result.failure.message);
     break;
 }

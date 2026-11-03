@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { Platform } from 'react-native';
 
 jest.mock('../native', () => ({
   nativeEcr: {
@@ -10,12 +11,15 @@ jest.mock('../native', () => ({
     inquireByReference: jest.fn(),
     signOn: jest.fn(),
     closeReceipt: jest.fn(),
+    settlement: jest.fn(),
+    printReceipt: jest.fn(),
     receipt: jest.fn(),
     cancel: jest.fn(),
   },
 }));
 
 import { EcrTerminal } from '../EcrTerminal';
+import { ECR_PRINTER_WIDTH } from '../printImage';
 import { nativeEcr } from '../native';
 
 const mockNativeEcr = jest.mocked(nativeEcr);
@@ -47,8 +51,16 @@ const approved = {
   raw: '{}',
 };
 
+const reachableProbe = {
+  reachable: true,
+  host: '192.168.1.50',
+  port: 9100,
+  endpoint: '192.168.1.50:9100',
+};
+
 describe('EcrTerminal', () => {
   beforeEach(() => {
+    (Platform as { OS: string }).OS = 'android';
     jest.clearAllMocks();
     mockNativeEcr.sale.mockResolvedValue(approved);
     mockNativeEcr.voidTransaction.mockResolvedValue(approved);
@@ -71,8 +83,24 @@ describe('EcrTerminal', () => {
       url: 'https://receipt.example/1',
       raw: '{}',
     });
-    mockNativeEcr.isReachable.mockResolvedValue(true);
+    mockNativeEcr.isReachable.mockResolvedValue(reachableProbe);
     mockNativeEcr.cancel.mockResolvedValue(true);
+    mockNativeEcr.closeReceipt.mockResolvedValue({
+      outcome: 'idle',
+      merchantReferenceId: '',
+      raw: '{}',
+    });
+    mockNativeEcr.printReceipt.mockResolvedValue({
+      status: 'SUCCESSFUL',
+      message: 'Printed',
+      ok: true,
+    });
+    mockNativeEcr.settlement.mockResolvedValue({
+      outcome: 'nothingToSettle',
+      merchantReferenceId: '',
+      message: 'Nothing to settle',
+      raw: '{}',
+    });
     mockNativeEcr.signOn.mockResolvedValue({
       outcome: 'available',
       merchantReferenceId: 'CHECK-1',
@@ -89,11 +117,15 @@ describe('EcrTerminal', () => {
     });
 
     const result = await terminal.sale('1.234', {
-      merchantReferenceId: 'ORDER-1',
+      merchantReference: 'ORDER-1',
       operationId: 'operation-1',
     });
 
-    expect(result.outcome).toBe('approved');
+    expect(result).toMatchObject({
+      outcome: 'approved',
+      merchantReference: 'ORDER-1',
+    });
+    expect(result).not.toHaveProperty('merchantReferenceId');
     expect(mockNativeEcr.sale).toHaveBeenCalledWith(
       expect.objectContaining({
         operationId: 'operation-1',
@@ -121,27 +153,27 @@ describe('EcrTerminal', () => {
 
     await terminal.voidTransaction('RECEIPT-1', {
       originalTerminalId: 'T1',
-      merchantReferenceId: 'VOID-1',
+      merchantReference: 'VOID-1',
     });
     await terminal.refund('1.234', {
       receiptNumber: 'RECEIPT-1',
       transactionDate: '20260902',
       originalTerminalId: 'T1',
-      merchantReferenceId: 'REFUND-1',
+      merchantReference: 'REFUND-1',
     });
     await terminal.inquire({
       receiptNumber: 'RECEIPT-1',
       transactionDate: '20260902',
-      merchantReferenceId: 'INQUIRY-1',
+      merchantReference: 'INQUIRY-1',
     });
     await terminal.inquireByReference('SALE-1', {
       transactionDate: '20260902',
-      merchantReferenceId: 'INQUIRY-2',
+      merchantReference: 'INQUIRY-2',
     });
     await terminal.receipt({
       receiptNumber: 'RECEIPT-1',
       transactionDate: '20260902',
-      merchantReferenceId: 'RECEIPT-CALL-1',
+      merchantReference: 'RECEIPT-CALL-1',
     });
 
     expect(mockNativeEcr.voidTransaction).toHaveBeenCalledWith(
@@ -183,7 +215,7 @@ describe('EcrTerminal', () => {
       })
     ).toThrow('yyyyMMdd');
     expect(() =>
-      terminal.sale('1.000', { merchantReferenceId: 'ORDER WITH SPACES' })
+      terminal.sale('1.000', { merchantReference: 'ORDER WITH SPACES' })
     ).toThrow('cannot contain whitespace');
     expect(
       () =>
@@ -226,6 +258,28 @@ describe('EcrTerminal', () => {
     ).toThrow('even-length hexadecimal string');
   });
 
+  test('probes USB and app to app through the native module', async () => {
+    mockNativeEcr.isReachable.mockResolvedValue(reachableProbe);
+    const usb = new EcrTerminal({
+      transport: 'usbCable',
+      serialNumber: 'SN1',
+    });
+    const onDevice = new EcrTerminal({
+      transport: 'appToApp',
+      serialNumber: 'SN1',
+    });
+
+    await expect(usb.isReachable()).resolves.toBe(true);
+    await expect(onDevice.isReachable()).resolves.toBe(true);
+    expect(mockNativeEcr.isReachable).toHaveBeenCalledTimes(2);
+    expect(mockNativeEcr.isReachable).toHaveBeenCalledWith(
+      expect.objectContaining({ transport: 'usbCable' })
+    );
+    expect(mockNativeEcr.isReachable).toHaveBeenCalledWith(
+      expect.objectContaining({ transport: 'appToApp' })
+    );
+  });
+
   test('does not probe transports that have no local listener', async () => {
     for (const terminal of [
       new EcrTerminal({
@@ -233,7 +287,6 @@ describe('EcrTerminal', () => {
         config: WEB_SERVICE_CONFIG,
       }),
       new EcrTerminal({ host: '192.168.1.50', transport: 'bluetooth' }),
-      new EcrTerminal({ host: '192.168.1.50', transport: 'usbCable' }),
     ]) {
       await expect(terminal.isReachable()).resolves.toBe(false);
     }
@@ -248,7 +301,7 @@ describe('EcrTerminal', () => {
     });
 
     const result = await terminal.sale('1.234', {
-      merchantReferenceId: 'ORDER-WS-1',
+      merchantReference: 'ORDER-WS-1',
     });
 
     expect(result.outcome).toBe('approved');
@@ -296,8 +349,8 @@ describe('EcrTerminal', () => {
       config: { secureHashKey: SECURE_HASH_KEY_ECR_WIFI },
     });
     expect(usb.host).toBe('');
-    expect(onDevice.host).toBe('');
-    await usb.signOn({ merchantReferenceId: 'CHECK-1' });
+    expect(onDevice.host).toBe('com.amwalpay.pos');
+    await usb.signOn({ merchantReference: 'CHECK-1' });
     expect(mockNativeEcr.signOn).toHaveBeenCalledWith(
       expect.objectContaining({ transport: 'usbCable' })
     );
@@ -308,6 +361,157 @@ describe('EcrTerminal', () => {
       'host is required'
     );
     expect(() => new EcrTerminal({})).toThrow('host is required');
+  });
+
+  test('uses a 130s Web Service read timeout unless the caller set one', () => {
+    const terminal = new EcrTerminal({
+      transport: 'webService',
+      config: WEB_SERVICE_CONFIG,
+    });
+    expect(terminal.config.responseTimeoutMs).toBe(130_000);
+
+    const overridden = new EcrTerminal({
+      transport: 'webService',
+      config: { ...WEB_SERVICE_CONFIG, responseTimeoutMs: 90_000 },
+    });
+    expect(overridden.config.responseTimeoutMs).toBe(90_000);
+  });
+
+  test('close receipt on Web Service forwards the original reference', async () => {
+    const terminal = new EcrTerminal({
+      transport: 'webService',
+      config: WEB_SERVICE_CONFIG,
+    });
+    const closed = await terminal.closeReceipt({
+      originalMerchantReference: 'SALE-1',
+    });
+    expect(closed.outcome).toBe('idle');
+    expect(mockNativeEcr.closeReceipt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'webService',
+        originalMerchantReference: 'SALE-1',
+      })
+    );
+  });
+
+  test('close receipt and settlement send nothing on an unsupported transport', async () => {
+    const bluetooth = new EcrTerminal({
+      transport: 'bluetooth',
+      serialNumber: 'P653200085189',
+    });
+    const closed = await bluetooth.closeReceipt();
+    const settlement = await bluetooth.settlement();
+    expect(closed.outcome).toBe('failed');
+    expect(settlement.outcome).toBe('failed');
+    if (closed.outcome === 'failed') {
+      expect(closed.failure.kind).toBe('unsupported');
+    }
+    expect(mockNativeEcr.closeReceipt).not.toHaveBeenCalled();
+    expect(mockNativeEcr.settlement).not.toHaveBeenCalled();
+  });
+
+  test('print receipt is app to app only and requires a 384 px image', async () => {
+    const wifi = new EcrTerminal({
+      host: '192.168.1.50',
+      transport: 'wifi',
+    });
+    const refused = await wifi.printReceipt(pngOfWidth(ECR_PRINTER_WIDTH));
+    expect(refused.status).toBe('FAILED');
+    expect(mockNativeEcr.printReceipt).not.toHaveBeenCalled();
+
+    const onDevice = new EcrTerminal({
+      transport: 'appToApp',
+      config: { secureHashKey: SECURE_HASH_KEY_ECR_WIFI },
+    });
+    const narrow = await onDevice.printReceipt(pngOfWidth(200));
+    expect(narrow.status).toBe('FAILED');
+    expect(narrow.message).toContain('384');
+    expect(mockNativeEcr.printReceipt).not.toHaveBeenCalled();
+
+    const printed = await onDevice.printReceipt(pngOfWidth(ECR_PRINTER_WIDTH), {
+      merchantReference: 'ORDER-1',
+    });
+    expect(printed).toEqual({
+      status: 'SUCCESSFUL',
+      message: 'Printed',
+      ok: true,
+    });
+    expect(mockNativeEcr.printReceipt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'appToApp',
+        merchantReferenceId: 'ORDER-1',
+        receiptImageBase64: expect.any(String),
+      })
+    );
+  });
+
+  test('settlement is sent on Wi-Fi, USB, app to app, and Web Service', async () => {
+    const wifi = new EcrTerminal({
+      host: '192.168.1.50',
+      transport: 'wifi',
+      config: { secureHashKey: SECURE_HASH_KEY_ECR_WIFI },
+    });
+    await wifi.settlement();
+    expect(mockNativeEcr.settlement).toHaveBeenCalledWith(
+      expect.objectContaining({ transport: 'wifi' })
+    );
+  });
+
+  test('does not probe USB or app to app on iOS', async () => {
+    (Platform as { OS: string }).OS = 'ios';
+    const usb = new EcrTerminal({ transport: 'usbCable', serialNumber: 'SN1' });
+    const onDevice = EcrTerminal.appToApp({ serialNumber: 'SN1' });
+
+    await expect(usb.probeReachability()).resolves.toMatchObject({
+      reachable: false,
+      endpoint: 'usbCable',
+    });
+    await expect(onDevice.isReachable()).resolves.toBe(false);
+    expect(mockNativeEcr.isReachable).not.toHaveBeenCalled();
+  });
+
+  test('refuses Web Service receipt and sign-on before anything is sent', async () => {
+    const terminal = new EcrTerminal({
+      transport: 'webService',
+      config: WEB_SERVICE_CONFIG,
+    });
+    const receipt = await terminal.receipt({
+      receiptNumber: '1',
+      transactionDate: '20260902',
+    });
+    const signOn = await terminal.signOn();
+    expect(receipt.outcome).toBe('failed');
+    expect(signOn.outcome).toBe('failed');
+    expect(mockNativeEcr.receipt).not.toHaveBeenCalled();
+    expect(mockNativeEcr.signOn).not.toHaveBeenCalled();
+  });
+
+  test('run sends a sale and refuses an inquiry', async () => {
+    const terminal = new EcrTerminal({ host: '192.168.1.50' });
+    await terminal.run('sale', { amount: '1.234', merchantReference: 'ORDER-1' });
+    expect(mockNativeEcr.sale).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: '1.234', merchantReferenceId: 'ORDER-1' })
+    );
+    expect(() => terminal.run('inquiry', { receiptNumber: '1' })).toThrow(
+      'inquire()'
+    );
+    expect(() =>
+      terminal.run('voidTransaction', { amount: '1.000', receiptNumber: '1' })
+    ).toThrow('takes no amount');
+  });
+
+  test('app to app accepts only the Amwal payment app', () => {
+    expect(EcrTerminal.appToApp().host).toBe('com.amwalpay.pos');
+    expect(
+      () =>
+        new EcrTerminal({
+          transport: 'appToApp',
+          host: 'com.example.other',
+        })
+    ).toThrow('com.amwalpay.pos');
+    expect(() => new EcrTerminal({ transport: 'ethernet' as 'wifi' })).toThrow(
+      'transport must be'
+    );
   });
 
   test('normalizes and validates the environment name', () => {
@@ -332,3 +536,12 @@ describe('EcrTerminal', () => {
     ).toThrow('environment must be one of SIT, UAT, PROD');
   });
 });
+
+function pngOfWidth(width: number): Uint8Array {
+  const bytes = new Uint8Array(24);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width);
+  view.setUint32(20, 8);
+  return bytes;
+}

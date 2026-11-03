@@ -96,6 +96,59 @@ enum ReactEcrMapping {
         }
     }
 
+    static func settlement(_ settlement: EcrSettlement) -> [String: Any] {
+        switch settlement {
+        case let .settled(
+            reference, batchId, currency, startTime, endTime,
+            totalTransactions, netAmount, totals, raw
+        ):
+            var rows: [String: [String: Any]] = [:]
+            for (type, total) in totals {
+                rows[type] = ["count": total.count, "amount": total.amount]
+            }
+            return [
+                "outcome": "settled",
+                "merchantReferenceId": reference,
+                "batchId": batchId,
+                "currency": currency,
+                "startTime": startTime,
+                "endTime": endTime,
+                "totalTransactions": totalTransactions,
+                "netAmount": netAmount,
+                "totals": rows,
+                "raw": raw,
+            ]
+        case let .nothingToSettle(reference, message, raw):
+            return [
+                "outcome": "nothingToSettle",
+                "merchantReferenceId": reference,
+                "message": message,
+                "raw": raw,
+            ]
+        case let .notSettled(
+            reference, responseCode, status, reason, uploadedTransactions, raw
+        ):
+            var payload: [String: Any] = [
+                "outcome": "notSettled",
+                "merchantReferenceId": reference,
+                "responseCode": responseCode,
+                "status": status,
+                "reason": reason,
+                "raw": raw,
+            ]
+            if let uploadedTransactions {
+                payload["uploadedTransactions"] = uploadedTransactions
+            }
+            return payload
+        case let .failed(reference, failure):
+            return [
+                "outcome": "failed",
+                "merchantReferenceId": reference,
+                "failure": self.failure(failure),
+            ]
+        }
+    }
+
     static func receiptClosed(_ closed: EcrReceiptClosed) -> [String: Any] {
         switch closed {
         case let .idle(reference, raw):
