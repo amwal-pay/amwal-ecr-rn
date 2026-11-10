@@ -71,8 +71,7 @@ export function TransactionScreen({
   const operations = operationsFor(terminal, profile);
   const [operation, setOperation] = useState<OperationId>('sale');
   const active =
-    operations.find((item) => item.id === operation) ??
-    operations[0]!;
+    operations.find((item) => item.id === operation) ?? operations[0]!;
   const [digits, setDigits] = useState('');
   const [merchantReference, setMerchantReference] = useState('');
   const [lookUpByReference, setLookUpByReference] = useState(false);
@@ -826,9 +825,7 @@ function Countdown({
       <View style={styles.countdownCopy}>
         <Text style={styles.waitingText}>{status}</Text>
         <Text style={styles.countdown}>{countdownLabel(remaining)}</Text>
-        <Text style={styles.countdownHint}>
-          remaining of {total} s timeout
-        </Text>
+        <Text style={styles.countdownHint}>remaining of {total} s timeout</Text>
         <View style={styles.track}>
           <View style={[styles.trackFill, { width: `${progress * 100}%` }]} />
         </View>

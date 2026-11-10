@@ -11,7 +11,9 @@ export const ECR_PRINTER_MAX_BYTES = 15 * 1024 * 1024;
  * Returns null when valid. JPEG and other formats are left for the Android
  * host to decode after the size check.
  */
-export function validatePrintImage(image: Uint8Array | null | undefined): string | null {
+export function validatePrintImage(
+  image: Uint8Array | null | undefined
+): string | null {
   if (image == null || image.length === 0) {
     return `Print image is required (width must be ${ECR_PRINTER_WIDTH}px)`;
   }
@@ -31,6 +33,9 @@ export function validatePrintImage(image: Uint8Array | null | undefined): string
   }
   return null;
 }
+
+// Hermes provides btoa; the library build excludes example/, so React Native globals are not in scope.
+declare function btoa(data: string): string;
 
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -59,9 +64,10 @@ function looksLikePng(bytes: Uint8Array): boolean {
 
 function readUint32(bytes: Uint8Array, offset: number): number {
   return (
-    ((bytes[offset] ?? 0) << 24) |
-    ((bytes[offset + 1] ?? 0) << 16) |
-    ((bytes[offset + 2] ?? 0) << 8) |
-    (bytes[offset + 3] ?? 0)
-  ) >>> 0;
+    (((bytes[offset] ?? 0) << 24) |
+      ((bytes[offset + 1] ?? 0) << 16) |
+      ((bytes[offset + 2] ?? 0) << 8) |
+      (bytes[offset + 3] ?? 0)) >>>
+    0
+  );
 }

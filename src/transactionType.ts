@@ -43,7 +43,14 @@ export const ECR_TRANSACTION_TYPES: {
   readonly [Key in EcrTransactionTypeId]: EcrTransactionType;
 } = {
   sale: define('sale', 'SALE', 'Sale', true, false, false),
-  voidTransaction: define('voidTransaction', 'VOID', 'Void', false, true, false),
+  voidTransaction: define(
+    'voidTransaction',
+    'VOID',
+    'Void',
+    false,
+    true,
+    false
+  ),
   refund: define('refund', 'REFUND', 'Refund', true, true, true),
   inquiry: define('inquiry', 'INQUIRY', 'Inquiry', false, true, true),
   receipt: define('receipt', 'RECEIPT', 'Receipt', false, true, true),
@@ -56,7 +63,14 @@ export const ECR_TRANSACTION_TYPES: {
     false,
     false
   ),
-  settlement: define('settlement', 'SETTLEMENT', 'Settlement', false, false, false),
+  settlement: define(
+    'settlement',
+    'SETTLEMENT',
+    'Settlement',
+    false,
+    false,
+    false
+  ),
 };
 
 /** Sale, void, and refund. Inquiry and receipt report on a transaction. */

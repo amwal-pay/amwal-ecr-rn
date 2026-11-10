@@ -15,7 +15,10 @@ export {
   ECR_TRANSACTION_TYPES,
   transactionTypeMovesMoney,
 } from './transactionType';
-export type { EcrTransactionType, EcrTransactionTypeId } from './transactionType';
+export type {
+  EcrTransactionType,
+  EcrTransactionTypeId,
+} from './transactionType';
 export {
   PAYMENT_APP_PACKAGE,
   hasReachabilityProbe,

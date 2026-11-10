@@ -488,9 +488,15 @@ describe('EcrTerminal', () => {
 
   test('run sends a sale and refuses an inquiry', async () => {
     const terminal = new EcrTerminal({ host: '192.168.1.50' });
-    await terminal.run('sale', { amount: '1.234', merchantReference: 'ORDER-1' });
+    await terminal.run('sale', {
+      amount: '1.234',
+      merchantReference: 'ORDER-1',
+    });
     expect(mockNativeEcr.sale).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: '1.234', merchantReferenceId: 'ORDER-1' })
+      expect.objectContaining({
+        amount: '1.234',
+        merchantReferenceId: 'ORDER-1',
+      })
     );
     expect(() => terminal.run('inquiry', { receiptNumber: '1' })).toThrow(
       'inquire()'

@@ -1,6 +1,15 @@
 import { EcrOperation } from './EcrOperation';
 import { nativeEcr } from './native';
-import { normalizeReachability, normalizeInquiry, normalizeReceipt, normalizeReceiptClosed, normalizeResult, normalizePrint, normalizeSettlement, normalizeSignOn } from './normalize';
+import {
+  normalizeReachability,
+  normalizeInquiry,
+  normalizeReceipt,
+  normalizeReceiptClosed,
+  normalizeResult,
+  normalizePrint,
+  normalizeSettlement,
+  normalizeSignOn,
+} from './normalize';
 import { bytesToBase64, validatePrintImage } from './printImage';
 import {
   ECR_TRANSACTION_TYPES,
@@ -369,10 +378,7 @@ export class EcrTerminal {
 
   startInquire(options: EcrDatedTransactionOptions): EcrOperation<EcrInquiry> {
     if (!this.isSupportedByPlugin) {
-      return this.refused(
-        options.operationId,
-        this.failedInquiry('Inquiry')
-      );
+      return this.refused(options.operationId, this.failedInquiry('Inquiry'));
     }
     return this.startOperation(
       'inquire',
@@ -440,7 +446,9 @@ export class EcrTerminal {
    * app and Bluetooth answer `unsupported` and send nothing: app to app has
    * already closed the receipt.
    */
-  closeReceipt(options: EcrCloseReceiptOptions = {}): Promise<EcrReceiptClosed> {
+  closeReceipt(
+    options: EcrCloseReceiptOptions = {}
+  ): Promise<EcrReceiptClosed> {
     if (!this.supportsCloseReceipt) {
       return Promise.resolve(
         unsupportedReceiptClosed(
@@ -523,7 +531,9 @@ export class EcrTerminal {
     );
     if (this.transport !== 'appToApp') {
       return Promise.resolve(
-        failedPrint('Print is only available over app to app. Nothing was sent.')
+        failedPrint(
+          'Print is only available over app to app. Nothing was sent.'
+        )
       );
     }
     if (!this.isSupportedByPlugin) {
@@ -598,7 +608,11 @@ export class EcrTerminal {
     if (type.requiresAmount && !options.amount?.trim()) {
       throw new TypeError(`${type.displayName} needs an amount`);
     }
-    if (!type.requiresAmount && options.amount != null && options.amount !== '') {
+    if (
+      !type.requiresAmount &&
+      options.amount != null &&
+      options.amount !== ''
+    ) {
       throw new TypeError(
         `${type.displayName} takes no amount — it returns exactly what the original took.`
       );
@@ -685,7 +699,11 @@ export class EcrTerminal {
   ): EcrOperation<EcrResult> {
     if (!this.isSupportedByPlugin) {
       const name =
-        method === 'sale' ? 'Sale' : method === 'voidTransaction' ? 'Void' : 'Refund';
+        method === 'sale'
+          ? 'Sale'
+          : method === 'voidTransaction'
+            ? 'Void'
+            : 'Refund';
       return this.refused(values.operationId, {
         outcome: 'failed',
         merchantReference: '',

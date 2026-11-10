@@ -208,7 +208,10 @@ export function operationsFor(
   const allowed = new Set(permitted.map((entry) => entry.messageType));
   const narrowed = MENU.filter((item) => allowed.has(item.messageType));
   const menu = narrowed.length > 0 ? narrowed : MENU;
-  if (terminal.transport !== 'wifi' || menu.some((item) => item.id === 'void')) {
+  if (
+    terminal.transport !== 'wifi' ||
+    menu.some((item) => item.id === 'void')
+  ) {
     return menu;
   }
   return MENU.filter(

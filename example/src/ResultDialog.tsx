@@ -200,7 +200,12 @@ function present(dialog: Dialog): {
             value: total.amount,
           })),
           ...(settlement.endTime
-            ? [{ label: 'Closed at', value: readableWireTime(settlement.endTime) }]
+            ? [
+                {
+                  label: 'Closed at',
+                  value: readableWireTime(settlement.endTime),
+                },
+              ]
             : []),
         ],
         raw: settlement.raw || null,

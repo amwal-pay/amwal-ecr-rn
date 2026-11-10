@@ -65,7 +65,8 @@ export function normalizeReachability(
     port: Number.isFinite(port) ? port : 0,
     error: errorText ? errorText : undefined,
     endpoint:
-      endpointText || (port > 0 ? `${host}:${port}` : host || fallback.endpoint),
+      endpointText ||
+      (port > 0 ? `${host}:${port}` : host || fallback.endpoint),
   };
 }
 

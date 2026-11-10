@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+Republishes 0.3.0, which never reached npm because its build failed.
+
+- The library build declares `btoa` (provided by Hermes). The type
+  definitions failed to build without it.
+- Source formatting brought in line with Prettier.
+
 ## 0.3.0
 
 Brings the package level with `amwal_ecr` 0.5.0, Android `ecr-sdk` 1.0.11,

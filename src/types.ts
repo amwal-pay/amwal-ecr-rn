@@ -10,11 +10,7 @@
  * way. There is no ethernet transport: a cabled IP terminal is still Wi-Fi ECR.
  */
 export type EcrTransport =
-  | 'wifi'
-  | 'usbCable'
-  | 'bluetooth'
-  | 'webService'
-  | 'appToApp';
+  'wifi' | 'usbCable' | 'bluetooth' | 'webService' | 'appToApp';
 
 /**
  * Hub deployment for Web Service ECR. URLs are resolved inside the native
@@ -241,9 +237,7 @@ export interface EcrReceiptClosedFailed {
 }
 
 export type EcrReceiptClosed =
-  | EcrReceiptClosedIdle
-  | EcrReceiptClosedRefused
-  | EcrReceiptClosedFailed;
+  EcrReceiptClosedIdle | EcrReceiptClosedRefused | EcrReceiptClosedFailed;
 
 export interface EcrSettlementTotal {
   count: number;
